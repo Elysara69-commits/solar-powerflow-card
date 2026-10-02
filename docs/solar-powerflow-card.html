@@ -24,13 +24,12 @@ th{color:var(--mut);font-weight:600}
 
 <h2>Ce que la carte affiche</h2>
 <ul>
-<li><span class="dotl" style="background:var(--pv)"></span><b>Production</b> : la puissance solaire est écrite en jaune dans le cercle, avec « EN PRODUCTION » ou « AU REPOS ».</li>
-<li><span class="dotl" style="background:var(--bat)"></span><b>Batterie</b> : niveau de charge, puissance de charge ou de décharge, énergie stockée en kWh.</li>
-<li><span class="dotl" style="background:var(--grid)"></span><b>Réseau</b> : injection (violet) ou soutirage (rouge).</li>
+<li><span class="dotl" style="background:var(--pv)"></span><b>Production</b> : la puissance est écrite en jaune dans le cercle, et « EN PRODUCTION » ou « AU REPOS » sous le titre.</li>
+<li><span class="dotl" style="background:var(--bat)"></span><b>Batterie</b> : niveau de charge dans le cercle ; sous le titre, puissance de charge (▲) ou de décharge (▼), et énergie stockée en kWh.</li>
+<li><span class="dotl" style="background:var(--grid)"></span><b>Réseau</b> : puissance dans le cercle ; sous le titre, injection (violet) ou soutirage (rouge).</li>
 <li><span class="dotl" style="background:var(--home)"></span><b>Maison</b> : consommation instantanée. Elle passe au vert quand le solaire la couvre entièrement.</li>
 <li><b>Cercle central</b> : pourcentage d'autonomie, c'est-à-dire la part de la consommation qui ne vient pas du réseau.</li>
-<li><b>Badge en haut à droite</b> : état courant. Au-dessus de la production, il change selon le cas ci-dessous.</li>
-<li><b>Barre du bas</b> : répartition de la production entre maison, batterie et réseau.</li>
+<li><b>Badge en haut à droite</b> : état courant. Il change selon le cas ci-dessous.</li>
 </ul>
 <table>
 <tr><th>Badge</th><th>Condition</th></tr>
@@ -49,15 +48,15 @@ th{color:var(--mut);font-weight:600}
 <p>Configuration complète :</p>
 <pre>type: custom:solar-powerflow-card
 title: INSTALLATION PV
-pv_entity: sensor.solarnet_puissance_photovoltaique
-load_entity: sensor.solarnet_power_load_consumed
-soc_entity: sensor.reserva_etat_de_charge
-battery_charge_entity: sensor.solarnet_power_battery_charge
-battery_discharge_entity: sensor.solarnet_power_battery_discharge
-grid_export_entity: sensor.solarnet_power_grid_export
-grid_import_entity: sensor.solarnet_power_grid_import
-max_power: 7000
-battery_capacity: 6.35</pre>
+pv_entity: sensor.production_solaire
+load_entity: sensor.consommation_maison
+soc_entity: sensor.batterie_niveau
+battery_charge_entity: sensor.batterie_charge
+battery_discharge_entity: sensor.batterie_decharge
+grid_export_entity: sensor.reseau_injection
+grid_import_entity: sensor.reseau_soutirage
+max_power: 5000
+battery_capacity: 6.5</pre>
 <p>Installation sans batterie : laissez simplement les entités de batterie vides, et mettez <code>battery_capacity: 0</code> pour masquer les kWh.</p>
 <pre>type: custom:solar-powerflow-card
 title: MA TOITURE
@@ -77,7 +76,7 @@ cards:
 <h2>Réglages</h2>
 <table>
 <tr><th>Option</th><th>Rôle</th></tr>
-<tr><td><code>max_power</code></td><td>Puissance qui remplit un cercle à 100 % et donne la vitesse maximale des animations.</td></tr>
+<tr><td><code>max_power</code></td><td>Puissance (5000 W par défaut) qui remplit un cercle à 100 % et donne la vitesse maximale des animations.</td></tr>
 <tr><td><code>battery_capacity</code></td><td>Capacité de la batterie en kWh, pour calculer l'énergie stockée.</td></tr>
 <tr><td>Capteurs en kW</td><td>Convertis automatiquement en W.</td></tr>
 <tr><td>Clic sur un cercle</td><td>Ouvre la fiche de l'entité correspondante.</td></tr>
@@ -86,15 +85,16 @@ cards:
 </main>
 <script>
 const S=[
- {t:"Journée ensoleillée, batterie qui se charge",pv:3480,b:["▲ 900 W","bat"],g:["0 W","off"],h:2100,badge:"CHARGE BATTERIE",c:"#22c55e"},
- {t:"Surplus injecté dans le réseau",pv:5200,b:["100 %","off"],g:["→ 2,6 kW","exp"],h:2600,badge:"SURPLUS INJECTÉ",c:"#c084fc"},
- {t:"Nuit, la maison tire sur la batterie",pv:0,b:["▼ 450 W","dis"],g:["0 W","off"],h:450,badge:"SUR BATTERIE",c:"#2dd4bf"}];
+ {t:"Journée ensoleillée, batterie qui se charge",pv:3480,soc:64,bs:"▲ 900 W",bk:"bat",gv:"0 W",gs:"INACTIF",gk:"off",h:2100,badge:"CHARGE BATTERIE",c:"#22c55e"},
+ {t:"Surplus injecté dans le réseau",pv:5200,soc:100,bs:"REPOS",bk:"off",gv:"2,6 kW",gs:"→ INJECTION",gk:"exp",h:2600,badge:"SURPLUS INJECTÉ",c:"#c084fc"},
+ {t:"Nuit, la maison tire sur la batterie",pv:0,soc:40,bs:"▼ 450 W",bk:"dis",gv:"0 W",gs:"INACTIF",gk:"off",h:450,badge:"SUR BATTERIE",c:"#2dd4bf"}];
 const col={bat:"#22c55e",dis:"#2dd4bf",exp:"#c084fc",off:"#64748b"};
-const n=(x,y,c,a,b)=>`<circle cx="${x}" cy="${y}" r="26" fill="#0b1220" stroke="${c}" stroke-width="3"/><text x="${x}" y="${y-2}" text-anchor="middle" fill="#f1f5f9" font-size="10" font-weight="700">${a}</text><text x="${x}" y="${y+11}" text-anchor="middle" fill="${c}" font-size="7">${b}</text>`;
-const ln=(x1,y1,x2,y2,c,on)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="2" stroke-dasharray="${on?'4 5':'1 6'}" opacity="${on?1:.35}"/>`;
+const kw=x=>x>=1000?(x/1000).toFixed(2).replace(".",",")+" kW":x+" W";
+const n=(x,y,c,v,name,st)=>`<circle cx="${x}" cy="${y}" r="26" fill="#0b1220" stroke="${c}" stroke-width="3"/><text x="${x}" y="${y+4}" text-anchor="middle" fill="#f1f5f9" font-size="10" font-weight="700">${v}</text><text x="${x}" y="${y+40}" text-anchor="middle" fill="#94a3b8" font-size="7" letter-spacing="1.5">${name}</text>${st?`<text x="${x}" y="${y+51}" text-anchor="middle" fill="${c}" font-size="7.5" font-weight="700">${st}</text>`:""}`;
+const ln=(x1,y1,x2,y2,c,on)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="2" stroke-dasharray="${on?"4 5":"1 6"}" opacity="${on?1:.35}"/>`;
 document.getElementById("scen").innerHTML=S.map(s=>{const pc=s.pv>0?"#fbbf24":"#64748b";
-return `<figure><svg viewBox="0 0 240 230" width="100%">
-${ln(120,52,120,88,"#fbbf24",s.pv>0)}${ln(120,132,120,168,"#38bdf8",true)}${ln(54,110,96,110,col[s.b[1]],s.b[1]!="off")}${ln(144,110,186,110,col[s.g[1]],s.g[1]!="off")}
-${n(120,36,pc,s.pv>=1000?(s.pv/1000).toFixed(2).replace(".",",")+" kW":s.pv+" W",s.pv>0?"EN PRODUCTION":"AU REPOS")}${n(40,110,col[s.b[1]],s.b[1]=="off"?"100%":s.b[0],"BATTERIE")}${n(200,110,col[s.g[1]],s.g[0],"RÉSEAU")}${n(120,110,"#fbbf24","","")}${n(120,194,"#38bdf8",s.h>=1000?(s.h/1000).toFixed(1)+" kW":s.h+" W","MAISON")}
-<text x="120" y="228" text-anchor="middle" fill="${s.c}" font-size="8">${s.badge}</text></svg><figcaption>${s.t}</figcaption></figure>`}).join("");
+return `<figure><svg viewBox="0 0 240 300" width="100%">
+${ln(120,92,120,108,"#fbbf24",s.pv>0)}${ln(120,160,120,196,"#38bdf8",true)}${ln(66,134,94,134,col[s.bk],s.bk!="off")}${ln(146,134,174,134,col[s.gk],s.gk!="off")}
+${n(120,34,pc,kw(s.pv),"PRODUCTION",s.pv>0?"EN PRODUCTION":"AU REPOS")}${n(40,134,col[s.bk],s.soc+"%","BATTERIE",s.bs)}${n(200,134,col[s.gk],s.gv,"RÉSEAU",s.gs)}${n(120,134,"#fbbf24","100%","","")}${n(120,222,"#38bdf8",kw(s.h),"MAISON","")}
+<text x="120" y="292" text-anchor="middle" fill="${s.c}" font-size="8.5">${s.badge}</text></svg><figcaption>${s.t}</figcaption></figure>`}).join("");
 </script></body></html>

@@ -1,17 +1,6 @@
-/* Solar Powerflow Card v1.0.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
+/* Solar Powerflow Card v1.1.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
 const ENTITY_KEYS = ['pv_entity','load_entity','soc_entity','battery_charge_entity','battery_discharge_entity','grid_export_entity','grid_import_entity'];
-const STUB = {
-  title: 'INSTALLATION PV',
-  pv_entity: 'sensor.solarnet_puissance_photovoltaique',
-  load_entity: 'sensor.solarnet_power_load_consumed',
-  soc_entity: 'sensor.reserva_etat_de_charge',
-  battery_charge_entity: 'sensor.solarnet_power_battery_charge',
-  battery_discharge_entity: 'sensor.solarnet_power_battery_discharge',
-  grid_export_entity: 'sensor.solarnet_power_grid_export',
-  grid_import_entity: 'sensor.solarnet_power_grid_import',
-  max_power: 7000,
-  battery_capacity: 6.35,
-};
+const STUB = { title: 'INSTALLATION PV', max_power: 5000, battery_capacity: 0 };
 const DEMO = { pv: 3480, load: 2100, soc: 64, ch: 900, dis: 0, exp: 480, imp: 0 };
 const SLATE = '#64748b';
 const clamp = x => Math.max(0, Math.min(1, x));
@@ -34,7 +23,7 @@ class SolarPowerflowCard extends HTMLElement {
 
   setConfig(config) {
     if (!config) throw new Error('Configuration invalide');
-    this._config = { max_power: 7000, battery_capacity: 6.35, title: 'INSTALLATION PV', ...config };
+    this._config = { max_power: 5000, battery_capacity: 0, title: 'INSTALLATION PV', ...config };
     this._sig = null;
     this._update();
   }
@@ -70,7 +59,7 @@ class SolarPowerflowCard extends HTMLElement {
 
   _render(d, demo) {
     const c = this._config;
-    const max = Number(c.max_power) || 7000;
+    const max = Number(c.max_power) || 5000;
     const cap = Number(c.battery_capacity) || 0;
     const { pv, load: conso, soc, ch, dis, exp, imp } = d;
     const E = k => c[k] || '';
@@ -92,25 +81,23 @@ class SolarPowerflowCard extends HTMLElement {
     const autonomie = conso > 10 ? Math.round(clamp((conso - imp) / conso) * 100) : null;
     const anyFlow = [pv, conso, ch, dis, exp, imp].some(v => v > 10);
 
-    const node = (cx, cy, color, icon, val, sub, frac, extra, ent) => {
+    const node = (cx, cy, color, icon, val, frac, extra, ent) => {
       const C = 2 * Math.PI * 40;
       const arc = frac > 0.005
         ? `<circle cx="${cx}" cy="${cy}" r="40" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${(C * frac).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 ${cx} ${cy})" style="filter:drop-shadow(0 0 5px ${color});"/>` : '';
-      const big = val === '';
-      const s = big ? 40 : 28, iy = big ? cy - 20 : cy - 31, isz = big ? 36 : 24;
       return `
         <g ${extra || ''} ${ent ? `data-entity="${ent}" style="cursor:pointer"` : ''}>
           <circle cx="${cx}" cy="${cy}" r="40" fill="rgba(15,23,42,.88)" stroke="rgba(148,163,184,.14)" stroke-width="5"/>
           ${arc}
-          <foreignObject x="${cx - s / 2}" y="${iy}" width="${s}" height="${s}">
-            <div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:center;width:${s}px;height:${s}px;color:${color};">
-              <ha-icon icon="${icon}" style="--mdc-icon-size:${isz}px;"></ha-icon>
+          <foreignObject x="${cx - 14}" y="${cy - 28}" width="28" height="28">
+            <div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;color:${color};">
+              <ha-icon icon="${icon}" style="--mdc-icon-size:24px;"></ha-icon>
             </div>
           </foreignObject>
-          ${big ? '' : `<text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="#f1f5f9" font-size="13" font-weight="700">${val}</text>
-          <text x="${cx}" y="${cy + 29}" text-anchor="middle" fill="${color}" font-size="7.5" font-weight="700" letter-spacing="1">${sub || ''}</text>`}
+          <text x="${cx}" y="${cy + 17}" text-anchor="middle" fill="#f1f5f9" font-size="14" font-weight="700">${val}</text>
         </g>`;
     };
+    const sub = (x, y, t, k) => `<text x="${x}" y="${y}" text-anchor="middle" fill="${k}" font-size="8" font-weight="700" letter-spacing="1.2">${t}</text>`;
     const label = (x, y, t) => `<text x="${x}" y="${y}" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="600" letter-spacing="2">${t}</text>`;
     const flow = (p, color, w) => {
       if (w <= 10) return '';
@@ -132,11 +119,12 @@ class SolarPowerflowCard extends HTMLElement {
     const batLabel = 'BATTERIE' + (cap > 0 ? ' · ' + (soc * cap / 100).toFixed(1).replace('.', ',') + ' kWh' : '');
 
     const flowSvg = `
-      <svg viewBox="0 0 400 396" width="100%" style="display:block;overflow:visible;">
+      <svg viewBox="0 0 400 412" width="100%" style="display:block;overflow:visible;">
         <defs><filter id="sf-glow" x="-200%" y="-200%" width="500%" height="500%">
           <feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
         ${label(200, 12, 'PRODUCTION')}
-        <g>
+        ${sub(200, 25, pv > 10 ? 'EN PRODUCTION' : 'AU REPOS', cPV)}
+        <g transform="translate(0,20)">
           ${track(pPV)}${track(pHouse)}${track(pBatToHub)}${track(pGridToHub)}
           ${flow(pPV, '#fbbf24', pv)}${flow(pHouse, '#38bdf8', conso)}
           ${ch > 10 ? flow(pHubToBat, '#22c55e', ch) : flow(pBatToHub, '#2dd4bf', dis)}
@@ -145,21 +133,17 @@ class SolarPowerflowCard extends HTMLElement {
           <circle cx="200" cy="200" r="24" fill="rgba(15,23,42,.95)" stroke="${pv > 10 ? '#fbbf24' : SLATE}" stroke-width="2" style="filter:drop-shadow(0 0 8px ${pv > 10 ? '#fbbf2488' : 'transparent'});"/>
           <text x="200" y="205" text-anchor="middle" fill="#f1f5f9" font-size="15" font-weight="800">${autonomie === null ? '–' : autonomie + '%'}</text>
           ${pv > 10 ? `<circle class="spin" cx="200" cy="72" r="49" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="2 9" stroke-linecap="round" opacity=".75"/>` : ''}
-          ${node(200, 72, cPV, 'mdi:solar-power-variant', fmt(pv), pv > 10 ? 'EN PRODUCTION' : 'AU REPOS', clamp(pv / max), '', E('pv_entity'))}
-          ${node(60, 200, batCol, 'mdi:home-battery', Math.round(soc) + '%', batSub, clamp(soc / 100), soc < 15 ? 'class="lowbat"' : '', E('soc_entity'))}
+          ${node(200, 72, cPV, 'mdi:solar-power-variant', fmt(pv), clamp(pv / max), '', E('pv_entity'))}
+          ${node(60, 200, batCol, 'mdi:home-battery', Math.round(soc) + '%', clamp(soc / 100), soc < 15 ? 'class="lowbat"' : '', E('soc_entity'))}
           ${label(60, 258, batLabel)}
-          ${node(340, 200, cGrid, 'mdi:transmission-tower', fmt(gridP), gridSub, clamp(gridP / max), '', E(exp > 10 ? 'grid_export_entity' : 'grid_import_entity'))}
+          ${sub(60, 271, batSub, batCol)}
+          ${node(340, 200, cGrid, 'mdi:transmission-tower', fmt(gridP), clamp(gridP / max), '', E(exp > 10 ? 'grid_export_entity' : 'grid_import_entity'))}
           ${label(340, 258, 'RÉSEAU')}
-          ${node(200, 328, cHouse, 'mdi:home-lightning-bolt', fmt(conso), '', clamp(conso / max), '', E('load_entity'))}
+          ${sub(340, 271, gridSub, cGrid)}
+          ${node(200, 328, cHouse, 'mdi:home-lightning-bolt', fmt(conso), clamp(conso / max), '', E('load_entity'))}
           ${label(200, 386, 'MAISON')}
         </g>
       </svg>`;
-
-    const house = Math.max(0, pv - ch - exp);
-    const tot = house + ch + exp;
-    const pc = x => tot > 0 ? (x / tot * 100) : 0;
-    const seg = (x, k) => `<div style="width:${pc(x).toFixed(1)}%;background:${k};box-shadow:0 0 8px ${k}88;transition:width 1s;"></div>`;
-    const leg = (lab, x, k) => `<div class="leg"><div class="l1"><span style="color:${k}">●</span> ${lab}</div><div class="l2" style="color:${k}">${fmt(x)}</div><div class="l3">${Math.round(pc(x))}%</div></div>`;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -181,12 +165,6 @@ class SolarPowerflowCard extends HTMLElement {
         .t2{font-size:9px;letter-spacing:2px;color:#64748b;margin-top:2px}
         .badge{font-size:7.5px;font-weight:700;letter-spacing:1px;padding:5px 9px;border-radius:999px;white-space:nowrap;display:flex;align-items:center;gap:6px;color:${col};border:1px solid ${col}66;background:${col}14}
         .dot{width:6px;height:6px;border-radius:50%;background:${col};box-shadow:0 0 8px ${col};animation:blink 1.6s ease-in-out infinite}
-        .split{padding-top:4px;border-top:1px solid rgba(148,163,184,.12);margin-top:8px}
-        .st{font-size:10px;letter-spacing:2.5px;color:#64748b;margin:10px 0 8px;text-align:center}
-        .bar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:rgba(148,163,184,.12)}
-        .legs{display:flex;justify-content:space-around;margin-top:10px}
-        .leg{display:flex;flex-direction:column;align-items:center;gap:2px}
-        .l1{font-size:8px;letter-spacing:1.5px;color:#94a3b8}.l2{font-size:12px;font-weight:700}.l3{font-size:8px;color:#64748b}
       </style>
       <div class="card">
         <div class="head">
@@ -194,11 +172,6 @@ class SolarPowerflowCard extends HTMLElement {
           <div class="badge"><span class="dot"></span>${txt}</div>
         </div>
         ${flowSvg}
-        <div class="split">
-          <div class="st">${tot > 0 ? 'OÙ VA LA PRODUCTION' : 'EN ATTENTE DE SOLEIL'}</div>
-          <div class="bar">${seg(house, '#38bdf8')}${seg(ch, '#22c55e')}${seg(exp, '#c084fc')}</div>
-          <div class="legs">${leg('MAISON', house, '#38bdf8')}${leg('BATTERIE', ch, '#22c55e')}${leg('RÉSEAU', exp, '#c084fc')}</div>
-        </div>
       </div>`;
   }
 }
@@ -254,4 +227,4 @@ window.customCards.push({
   description: 'Flux d\'énergie solaire animé : production, batterie, réseau et maison.',
   preview: true,
 });
-console.info('%c SOLAR-POWERFLOW-CARD %c v1.0.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');
+console.info('%c SOLAR-POWERFLOW-CARD %c v1.1.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');
