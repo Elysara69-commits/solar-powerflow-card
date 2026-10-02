@@ -1,10 +1,50 @@
-/* Solar Powerflow Card v1.1.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
+/* Solar Powerflow Card v1.1.1 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
 const ENTITY_KEYS = ['pv_entity','load_entity','soc_entity','battery_charge_entity','battery_discharge_entity','grid_export_entity','grid_import_entity'];
 const STUB = { title: 'INSTALLATION PV', max_power: 5000, battery_capacity: 0 };
 const DEMO = { pv: 3480, load: 2100, soc: 64, ch: 900, dis: 0, exp: 480, imp: 0 };
 const SLATE = '#64748b';
 const clamp = x => Math.max(0, Math.min(1, x));
 const fmt = w => w >= 1000 ? (w / 1000).toFixed(2).replace('.', ',') + ' kW' : Math.round(w) + ' W';
+
+const CSS = `
+  :host{display:block}
+  @keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes dashmove{to{stroke-dashoffset:-12}}
+  @keyframes pulse{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.7);opacity:0}}
+  .spin{transform-box:fill-box;transform-origin:center;animation:spin 16s linear infinite}
+  .pulse{transform-box:fill-box;transform-origin:center;animation:pulse 2.4s ease-out infinite}
+  .lowbat{animation:blink 1.2s ease-in-out infinite}
+  .card{padding:16px 14px 18px;border-radius:22px;overflow:hidden;color:#e2e8f0;animation:riseIn .7s ease-out;
+    background:radial-gradient(120% 70% at 50% 0%,rgba(251,191,36,.13),transparent 60%),linear-gradient(180deg,#0b1220 0%,#060a14 100%);
+    box-shadow:0 0 26px rgba(251,191,36,.10),inset 0 0 50px rgba(2,6,23,.7)}
+  .head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
+  .t1{font-size:15px;font-weight:800;letter-spacing:2.5px;color:#fde68a;text-shadow:0 0 10px #fbbf2488}
+  .t2{font-size:9px;letter-spacing:2px;color:#64748b;margin-top:2px}
+  .badge{font-size:7.5px;font-weight:700;letter-spacing:1px;padding:5px 9px;border-radius:999px;white-space:nowrap;display:flex;align-items:center;gap:6px}
+  .dot{width:6px;height:6px;border-radius:50%;animation:blink 1.6s ease-in-out infinite}
+`;
+
+// Met à jour le DOM existant sans le recréer : les animations ne sont pas relancées.
+function morph(cur, next) {
+  for (const a of Array.from(cur.attributes)) {
+    if (!next.hasAttribute(a.name)) cur.removeAttribute(a.name);
+  }
+  for (const a of Array.from(next.attributes)) {
+    if (cur.getAttribute(a.name) !== a.value) cur.setAttribute(a.name, a.value);
+  }
+  const cc = Array.from(cur.childNodes), nc = Array.from(next.childNodes);
+  const n = Math.max(cc.length, nc.length);
+  for (let i = 0; i < n; i++) {
+    const c = cc[i], x = nc[i];
+    if (!x) { cur.removeChild(c); continue; }
+    if (!c) { cur.appendChild(x.cloneNode(true)); continue; }
+    if (c.nodeType !== x.nodeType || c.nodeName !== x.nodeName) { cur.replaceChild(x.cloneNode(true), c); continue; }
+    if (c.nodeType === 3 || c.nodeType === 8) { if (c.nodeValue !== x.nodeValue) c.nodeValue = x.nodeValue; continue; }
+    morph(c, x);
+  }
+}
 
 class SolarPowerflowCard extends HTMLElement {
   static getConfigElement() { return document.createElement('solar-powerflow-card-editor'); }
@@ -101,7 +141,7 @@ class SolarPowerflowCard extends HTMLElement {
     const label = (x, y, t) => `<text x="${x}" y="${y}" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="600" letter-spacing="2">${t}</text>`;
     const flow = (p, color, w) => {
       if (w <= 10) return '';
-      const dur = Math.max(1.3, 4 - 2.7 * clamp(w / max));
+      const dur = Math.round(Math.max(1.3, 4 - 2.7 * clamp(w / max)) * 2) / 2;
       let o = `<path d="${p}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 7" opacity=".55" style="animation:dashmove ${(dur / 4).toFixed(2)}s linear infinite;"/>`;
       for (let i = 0; i < 3; i++) {
         o += `<circle r="3.4" fill="${color}" filter="url(#sf-glow)"><animateMotion dur="${dur.toFixed(2)}s" begin="-${(i * dur / 3).toFixed(2)}s" repeatCount="indefinite" path="${p}"/></circle>`;
@@ -145,34 +185,23 @@ class SolarPowerflowCard extends HTMLElement {
         </g>
       </svg>`;
 
-    this.shadowRoot.innerHTML = `
-      <style>
-        :host{display:block}
-        @keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-        @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes dashmove{to{stroke-dashoffset:-12}}
-        @keyframes pulse{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.7);opacity:0}}
-        .spin{transform-box:fill-box;transform-origin:center;animation:spin 16s linear infinite}
-        .pulse{transform-box:fill-box;transform-origin:center;animation:pulse 2.4s ease-out infinite}
-        .lowbat{animation:blink 1.2s ease-in-out infinite}
-        .card{padding:16px 14px 18px;border-radius:22px;overflow:hidden;color:#e2e8f0;animation:riseIn .7s ease-out;
-          background:radial-gradient(120% 70% at 50% 0%,rgba(251,191,36,.13),transparent 60%),linear-gradient(180deg,#0b1220 0%,#060a14 100%);
-          box-shadow:0 0 26px rgba(251,191,36,.10),inset 0 0 50px rgba(2,6,23,.7);
-          border:1px solid ${pv > 10 ? 'rgba(251,191,36,.45)' : 'rgba(100,116,139,.35)'}}
-        .head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
-        .t1{font-size:15px;font-weight:800;letter-spacing:2.5px;color:#fde68a;text-shadow:0 0 10px #fbbf2488}
-        .t2{font-size:9px;letter-spacing:2px;color:#64748b;margin-top:2px}
-        .badge{font-size:7.5px;font-weight:700;letter-spacing:1px;padding:5px 9px;border-radius:999px;white-space:nowrap;display:flex;align-items:center;gap:6px;color:${col};border:1px solid ${col}66;background:${col}14}
-        .dot{width:6px;height:6px;border-radius:50%;background:${col};box-shadow:0 0 8px ${col};animation:blink 1.6s ease-in-out infinite}
-      </style>
-      <div class="card">
+    const html = `
+      <div class="card" style="border:1px solid ${pv > 10 ? 'rgba(251,191,36,.45)' : 'rgba(100,116,139,.35)'}">
         <div class="head">
           <div><div class="t1">${c.title || ''}</div><div class="t2">FLUX D'ÉNERGIE · ${demo ? 'DÉMO' : 'TEMPS RÉEL'}</div></div>
-          <div class="badge"><span class="dot"></span>${txt}</div>
+          <div class="badge" style="color:${col};border:1px solid ${col}66;background:${col}14"><span class="dot" style="background:${col};box-shadow:0 0 8px ${col}"></span>${txt}</div>
         </div>
         ${flowSvg}
       </div>`;
+    const root = this.shadowRoot;
+    if (!this._built || !root.querySelector('.card')) {
+      root.innerHTML = `<style>${CSS}</style>${html}`;
+      this._built = true;
+    } else {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = html;
+      morph(root.querySelector('.card'), tpl.content.firstElementChild);
+    }
   }
 }
 
@@ -227,4 +256,4 @@ window.customCards.push({
   description: 'Flux d\'énergie solaire animé : production, batterie, réseau et maison.',
   preview: true,
 });
-console.info('%c SOLAR-POWERFLOW-CARD %c v1.1.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');
+console.info('%c SOLAR-POWERFLOW-CARD %c v1.1.1 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');
