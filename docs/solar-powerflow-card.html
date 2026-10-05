@@ -106,6 +106,26 @@ alert_no_production: true</pre>
 <tr><td>Aucune production</td><td>Production ≤ 10 W alors que <code>sun.sun</code> (ou <code>sun_entity</code>) indique le soleil levé à plus de 10° au-dessus de l'horizon</td></tr>
 </table>
 
+<h2>Détail de la consommation</h2>
+<p>Option <code>consumption_breakdown: ring</code> : l'anneau du cercle Maison se découpe en segments colorés, un par appareil, avec une légende. Ce qui n'est pas mesuré apparaît dans « Autres » (consommation de la maison moins les appareils affichés).</p>
+<div class="opts">
+<figure class="opt"><img src="../images/breakdown.png" alt="Anneau coloré"><figcaption>Un segment par appareil, légende sous la carte.</figcaption></figure>
+<figure class="opt"><img src="../images/breakdown-group.png" alt="Groupes"><figcaption><code>group_devices: true</code> : les appareils d'un même groupe sont additionnés.</figcaption></figure>
+</div>
+<pre>consumption_breakdown: ring
+breakdown_max: 5
+devices:
+  - entity: sensor.prise_frigo_puissance
+    name: Réfrigérateur
+  - entity: sensor.radiateur_salon_puissance
+    name: Radiateur salon
+    group: Chauffage</pre>
+<ul>
+<li>Ajoutez des capteurs de <b>puissance</b> indépendants (pas de double comptage).</li>
+<li>Seuls les plus gros consommateurs du moment sont détaillés (<code>breakdown_max</code>) ; leur couleur reste fixe.</li>
+<li>Le cercle est toujours plein : il montre la répartition, le chiffre au centre donne le niveau.</li>
+</ul>
+
 <h2>Réglages</h2>
 <table>
 <tr><th>Option</th><th>Rôle</th></tr>

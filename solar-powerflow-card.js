@@ -1,4 +1,4 @@
-/* Solar Powerflow Card v1.2.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
+/* Solar Powerflow Card v1.3.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
 const ENTITY_KEYS = ['pv_entity','load_entity','soc_entity','battery_charge_entity','battery_discharge_entity','grid_export_entity','grid_import_entity'];
 const STUB = {
   title: 'INSTALLATION PV', layout: 'standard', max_power: 5000, battery_capacity: 0,
@@ -6,8 +6,15 @@ const STUB = {
   alert_battery_full: false, battery_full_threshold: 99,
   alert_battery_low: false, battery_low_threshold: 15,
   alert_no_production: false,
+  consumption_breakdown: 'off', breakdown_max: 5, breakdown_legend: true, group_devices: false, other_label: 'Autres',
 };
 const DEFAULTS = { ...STUB, sun_entity: 'sun.sun' };
+const DEMO_DEVS = [
+  { i: 0, name: 'Chauffage', color: '', group: '', w: 800, off: false },
+  { i: 1, name: 'Lave-linge', color: '', group: '', w: 540, off: false },
+  { i: 2, name: 'Informatique', color: '', group: '', w: 160, off: false },
+  { i: 3, name: 'Réfrigérateur', color: '', group: '', w: 110, off: false },
+];
 const DEMO = { pv: 3480, load: 2100, soc: 64, ch: 900, dis: 0, exp: 480, imp: 0 };
 const SLATE = '#64748b';
 const clamp = x => Math.max(0, Math.min(1, x));
@@ -37,8 +44,55 @@ function geometry(layout, showBat, showGrid) {
     bat: showBat ? { x: col - L.dx, y: L.hubY } : null, grid: showGrid ? { x: col + L.dx, y: L.hubY } : null } };
 }
 
+/* ---------- Détail de la consommation (anneau coloré du cercle Maison) ---------- */
+const PALETTE = ['#38bdf8', '#f97316', '#a78bfa', '#34d399', '#f472b6', '#facc15', '#22d3ee', '#fb7185'];
+const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function breakdown(conso, devs, c) {
+  let items = devs.map(v => ({ i: v.i, name: v.name, color: v.color || PALETTE[v.i % PALETTE.length], group: v.group, w: v.w }));
+  if (c.group_devices) {
+    const map = new Map(), out = [];
+    items.forEach(it => {
+      if (!it.group) { out.push(it); return; }
+      const g = map.get(it.group);
+      if (g) g.w += it.w; else { const n = { ...it, name: it.group }; map.set(it.group, n); out.push(n); }
+    });
+    items = out;
+  }
+  const maxN = Math.max(1, Math.min(12, Math.round(Number(c.breakdown_max)) || 5));
+  // les plus gros consommateurs du moment, affichés dans l'ordre de la configuration (couleurs stables)
+  const top = items.filter(it => it.w > 10).sort((a, b) => b.w - a.w).slice(0, maxN).sort((a, b) => a.i - b.i);
+  if (!top.length) return null;
+  const sum = top.reduce((t, it) => t + it.w, 0);
+  const total = Math.max(conso, sum);
+  if (total <= 10) return null;
+  const other = Math.max(0, conso - sum);
+  const segs = top.map(it => ({ name: it.name, color: it.color, w: it.w, frac: it.w / total }));
+  if (other / total > 0.005) segs.push({ name: c.other_label || 'Autres', color: SLATE, w: other, frac: other / total });
+  return { segs, offline: devs.filter(v => v.off).length, legend: c.breakdown_legend !== false };
+}
+
+function segsSvg(n, R, k, C) {
+  const gap = n.segs.length === 1 ? 0 : 3;
+  let acc = 0;
+  return n.segs.map(s => {
+    const len = s.frac * C, dash = Math.max(0.5, len - gap);
+    const o = `<circle class="seg" cx="${n.x}" cy="${n.y}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${(6 * k).toFixed(1)}" stroke-dasharray="${dash.toFixed(1)} ${(C - dash).toFixed(1)}" stroke-dashoffset="${(-(acc + gap / 2)).toFixed(1)}" transform="rotate(-90 ${n.x} ${n.y})"/>`;
+    acc += len;
+    return o;
+  }).join('');
+}
+
+function legendHtml(m) {
+  const b = m.breakdown;
+  if (!b || !b.legend) return '<div class="legend"></div>';
+  const items = b.segs.map(s => `<div class="lg"><span class="ld" style="background:${s.color}"></span><span class="ln">${esc(s.name)}</span><span class="lv">${fmt(s.w)}</span></div>`).join('');
+  const off = b.offline ? `<div class="lo">⚠ ${b.offline} appareil${b.offline > 1 ? 's' : ''} indisponible${b.offline > 1 ? 's' : ''}</div>` : '';
+  return `<div class="legend">${items}${off}</div>`;
+}
+
 /* ---------- Modèle : toutes les valeurs calculées, sans HTML ---------- */
-function buildModel(d, c, sunUp) {
+function buildModel(d, c, sunUp, devs) {
   const max = Number(c.max_power) || 5000;
   const cap = Number(c.battery_capacity) || 0;
   const showBat = c.show_battery !== false, showGrid = c.show_grid !== false;
@@ -82,9 +136,10 @@ function buildModel(d, c, sunUp) {
     }
   }
 
+  const bd = c.consumption_breakdown === 'ring' ? breakdown(conso, devs || [], c) : null;
   const nodes = {
     pv: { ...P.pv, color: pvCol, icon: 'mdi:solar-power-variant', val: fmt(pv), frac: clamp(pv / max), ent: E('pv_entity'), cls: pvCls, name: 'PRODUCTION', sub: pvSub, subCol: pvCol, spin: pv > 10 },
-    house: { ...P.house, color: cHouse, icon: 'mdi:home-lightning-bolt', val: fmt(conso), frac: clamp(conso / max), ent: E('load_entity'), cls: '', name: 'MAISON', sub: '', subCol: '' },
+    house: { ...P.house, color: cHouse, icon: 'mdi:home-lightning-bolt', val: fmt(conso), frac: clamp(conso / max), ent: E('load_entity'), cls: '', name: 'MAISON', sub: '', subCol: '', segs: bd ? bd.segs : null },
     bat: showBat ? { ...P.bat, color: batCol, icon: 'mdi:home-battery', val: Math.round(soc) + '%', frac: clamp(soc / 100), ent: E('soc_entity'), cls: batCls, glow: batGlow,
       name: 'BATTERIE' + (cap > 0 ? ' · ' + (soc * cap / 100).toFixed(1).replace('.', ',') + ' kWh' : ''), sub: batSub, subCol: batSubCol } : null,
     grid: showGrid ? { ...P.grid, color: cGrid, icon: 'mdi:transmission-tower', val: fmt(gridP), frac: clamp(gridP / max), ent: E(exp > 10 ? 'grid_export_entity' : 'grid_import_entity'), cls: '', name: 'RÉSEAU', sub: gridSub, subCol: cGrid } : null,
@@ -115,7 +170,7 @@ function buildModel(d, c, sunUp) {
     if (ch > 10) add('hub', 'bat', '#22c55e', ch); else add('bat', 'hub', '#2dd4bf', dis);
     if (exp > 10) add('hub', 'grid', '#c084fc', exp); else add('grid', 'hub', '#f87171', imp);
   }
-  return { g, max, nodes, flows, tracks, status: { txt, col }, autonomie, anyFlow, active: pv > 10, hub: P.hub };
+  return { g, max, nodes, flows, tracks, status: { txt, col }, autonomie, anyFlow, active: pv > 10, hub: P.hub, breakdown: bd };
 }
 
 /* ---------- Vue : SVG à partir du modèle ---------- */
@@ -126,7 +181,7 @@ function nodeSvg(m, key) {
   const n = m.nodes[key];
   if (!n) return '';
   const R = m.g.R, k = R / 40, C = 2 * Math.PI * R;
-  const arc = n.frac > 0.005
+  const arc = n.segs ? segsSvg(n, R, k, C) : n.frac > 0.005
     ? `<circle cx="${n.x}" cy="${n.y}" r="${R}" fill="none" stroke="${n.color}" stroke-width="${(5 * k).toFixed(1)}" stroke-linecap="round" stroke-dasharray="${(C * n.frac).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 ${n.x} ${n.y})" style="filter:drop-shadow(0 0 5px ${n.color});"/>` : '';
   const fo = +(28 * k).toFixed(1), ico = +(24 * k).toFixed(1);
   const style = (n.ent ? 'cursor:pointer;' : '') + (n.glow ? `filter:drop-shadow(0 0 7px ${n.color});` : '');
@@ -202,6 +257,13 @@ const CSS = `
   .t2{font-size:9px;letter-spacing:2px;color:#64748b;margin-top:2px}
   .badge{font-size:7.5px;font-weight:700;letter-spacing:1px;padding:5px 9px;border-radius:999px;white-space:nowrap;display:flex;align-items:center;gap:6px}
   .dot{width:6px;height:6px;border-radius:50%;animation:blink 1.6s ease-in-out infinite}
+  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px 16px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(148,163,184,.12)}
+  .legend:empty{display:none}
+  .lg{display:flex;align-items:center;gap:6px;font-size:10px;min-width:0}
+  .ld{width:8px;height:8px;border-radius:50%;flex:none}
+  .ln{color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+  .lv{color:#f1f5f9;font-weight:700;flex:none}
+  .lo{grid-column:1/-1;font-size:9px;color:#f97316}
 `;
 
 // Met à jour le DOM existant sans le recréer : les animations ne sont pas relancées.
@@ -247,10 +309,12 @@ class SolarPowerflowCard extends HTMLElement {
   }
 
   set hass(hass) { this._hass = hass; this._update(); }
-  getCardSize() { return this._config && this._config.layout === 'compact' ? 5 : (this._config && this._config.layout === 'horizontal' ? 4 : 8); }
+  getCardSize() {
+    const l = this._config && this._config.layout, base = l === 'compact' ? 5 : (l === 'horizontal' ? 4 : 8);
+    return base + (this._config && this._config.consumption_breakdown === 'ring' ? 2 : 0);
+  }
 
-  _read(key) {
-    const id = this._config[key];
+  _num(id) {
     const st = id && this._hass && this._hass.states[id];
     if (!st) return null;
     let n = parseFloat(st.state);
@@ -259,6 +323,7 @@ class SolarPowerflowCard extends HTMLElement {
     if (unit === 'kw') n *= 1000;
     return n;
   }
+  _read(key) { return this._num(this._config[key]); }
 
   _update() {
     if (!this._config || !this._hass) return;
@@ -271,23 +336,31 @@ class SolarPowerflowCard extends HTMLElement {
     const d = demo ? DEMO : Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, v === null ? 0 : v]));
     const sun = this._hass.states[this._config.sun_entity || 'sun.sun'];
     const sunUp = !!(sun && sun.state === 'above_horizon' && Number(sun.attributes && sun.attributes.elevation) > 10);
-    const sig = JSON.stringify([d, demo, sunUp, this._config]);
+    const list = Array.isArray(this._config.devices) ? this._config.devices : [];
+    let devs = list.map((x, i) => ({ x, i })).filter(o => o.x && o.x.entity).map(({ x, i }) => {
+      const st = this._hass.states[x.entity], v = this._num(x.entity);
+      const off = !st || st.state === 'unavailable' || st.state === 'unknown';
+      return { i, name: x.name || (st && st.attributes && st.attributes.friendly_name) || x.entity, color: x.color || '', group: x.group || '', w: off || v === null ? 0 : Math.max(0, v), off };
+    });
+    if (demo && this._config.consumption_breakdown === 'ring' && !devs.length) devs = DEMO_DEVS;
+    const sig = JSON.stringify([d, demo, sunUp, devs, this._config]);
     if (sig === this._sig) return;
     this._sig = sig;
-    this._render(d, demo, sunUp);
+    this._render(d, demo, sunUp, devs);
   }
 
-  _render(d, demo, sunUp) {
+  _render(d, demo, sunUp, devs) {
     const c = this._config;
-    const m = buildModel(d, c, sunUp);
+    const m = buildModel(d, c, sunUp, devs);
     const { txt, col } = m.status;
     const html = `
       <div class="card ${m.g.layout}" style="border:1px solid ${m.active ? 'rgba(251,191,36,.45)' : 'rgba(100,116,139,.35)'}">
         <div class="head">
-          <div><div class="t1">${c.title || ''}</div><div class="t2">FLUX D'ÉNERGIE · ${demo ? 'DÉMO' : 'TEMPS RÉEL'}</div></div>
+          <div><div class="t1">${esc(c.title || '')}</div><div class="t2">FLUX D'ÉNERGIE · ${demo ? 'DÉMO' : 'TEMPS RÉEL'}</div></div>
           <div class="badge" style="color:${col};border:1px solid ${col}66;background:${col}14"><span class="dot" style="background:${col};box-shadow:0 0 8px ${col}"></span>${txt}</div>
         </div>
         ${svgFromModel(m)}
+        ${legendHtml(m)}
       </div>`;
     const root = this.shadowRoot;
     if (!this._built || !root.querySelector('.card')) {
@@ -323,6 +396,15 @@ const LABELS = {
   battery_low_threshold: 'Batterie faible en dessous de (%)',
   alert_no_production: 'Alerte : aucune production en plein jour',
   sun_entity: 'Entité soleil (pour l\'alerte de production)',
+  consumption_breakdown: 'Détail de la consommation de la maison',
+  breakdown_max: 'Nombre d\'appareils détaillés (les autres sont regroupés)',
+  breakdown_legend: 'Afficher la légende sous la carte',
+  group_devices: 'Regrouper les appareils ayant le même groupe',
+  other_label: 'Nom de la part non détaillée',
+  entity: 'Capteur de puissance',
+  name: 'Nom (facultatif)',
+  group: 'Groupe (facultatif)',
+  color: 'Couleur (facultatif, ex. #38bdf8)',
 };
 const sel = name => ({ name, selector: { entity: { domain: 'sensor' } } });
 const bool = name => ({ name, selector: { boolean: {} } });
@@ -345,25 +427,128 @@ const SCHEMA = [
   { type: 'grid', name: '', schema: [bool('alert_battery_low'), pct('battery_low_threshold')] },
   bool('alert_no_production'),
   { name: 'sun_entity', selector: { entity: { domain: 'sun' } } },
+  { name: 'consumption_breakdown', selector: { select: { mode: 'dropdown', options: [
+    { value: 'off', label: 'Désactivé' },
+    { value: 'ring', label: 'Anneau coloré du cercle Maison' },
+  ] } } },
+  { type: 'grid', name: '', schema: [
+    { name: 'breakdown_max', selector: { number: { min: 1, max: 12, step: 1, mode: 'box' } } },
+    bool('breakdown_legend'),
+  ] },
+  { type: 'grid', name: '', schema: [bool('group_devices'), { name: 'other_label', selector: { text: {} } }] },
+];
+const ROW_SCHEMA = [
+  { name: 'entity', selector: { entity: { domain: 'sensor' } } },
+  { type: 'grid', name: '', schema: [{ name: 'name', selector: { text: {} } }, { name: 'group', selector: { text: {} } }] },
+  { name: 'color', selector: { text: {} } },
 ];
 
 class SolarPowerflowCardEditor extends HTMLElement {
   setConfig(config) { this._config = config; this._draw(); }
-  set hass(hass) { this._hass = hass; if (this._form) this._form.hass = hass; }
+  set hass(hass) {
+    this._hass = hass;
+    if (this._form) this._form.hass = hass;
+    (this._rows || []).forEach(r => { r.form.hass = hass; });
+  }
+
+  _emit(config) {
+    const out = { ...config };
+    if (!Array.isArray(out.devices) || !out.devices.length) delete out.devices;
+    this._config = out;
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: out }, bubbles: true, composed: true }));
+  }
+
+  _devices() { return Array.isArray(this._config.devices) ? this._config.devices.slice() : []; }
+
   _draw() {
     if (!this._form) {
+      const st = document.createElement('style');
+      st.textContent = '.sp-h{margin:20px 0 4px;font-weight:600;color:var(--primary-text-color)}'
+        + '.sp-hint{font-size:12px;color:var(--secondary-text-color);margin:0 0 10px}'
+        + '.sp-row{border:1px solid var(--divider-color);border-radius:12px;padding:6px 12px 12px;margin:0 0 10px}'
+        + '.sp-bar{display:flex;gap:6px;justify-content:flex-end;margin:4px 0}'
+        + '.sp-b{cursor:pointer;border:1px solid var(--divider-color);background:transparent;color:var(--primary-text-color);border-radius:8px;padding:4px 10px;font:inherit}'
+        + '.sp-b:disabled{opacity:.35;cursor:default}'
+        + '.sp-add{width:100%;padding:8px;border-style:dashed;color:var(--primary-color)}';
+      this.appendChild(st);
       this._form = document.createElement('ha-form');
       this._form.computeLabel = s => LABELS[s.name] || s.name;
       this._form.addEventListener('value-changed', ev => {
         ev.stopPropagation();
-        const config = { ...ev.detail.value, type: this._config.type };
-        this.dispatchEvent(new CustomEvent('config-changed', { detail: { config }, bubbles: true, composed: true }));
+        this._emit({ ...ev.detail.value, type: this._config.type, devices: this._config.devices });
       });
       this.appendChild(this._form);
+      this._box = document.createElement('div');
+      this.appendChild(this._box);
     }
     this._form.hass = this._hass;
     this._form.schema = SCHEMA;
     this._form.data = { ...DEFAULTS, ...this._config };
+    this._drawDevices();
+  }
+
+  _drawDevices() {
+    const devs = this._devices();
+    if (this._rows && this._rows.length === devs.length) {
+      this._rows.forEach((r, i) => { r.form.data = devs[i]; });
+      return;
+    }
+    this._box.textContent = '';
+    this._rows = [];
+    const h = document.createElement('div'); h.className = 'sp-h'; h.textContent = 'Appareils à détailler';
+    const hint = document.createElement('div'); hint.className = 'sp-hint';
+    hint.textContent = 'Ajoutez les capteurs de puissance (W) des appareils. L\'écart avec la consommation de la maison apparaît dans la part non détaillée. Évitez les doubles comptages (une multiprise et les appareils branchés dessus).';
+    this._box.append(h, hint);
+    const btn = (label, title, fn, disabled) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'sp-b'; b.textContent = label; b.title = title; b.disabled = !!disabled;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    devs.forEach((dev, i) => {
+      const row = document.createElement('div'); row.className = 'sp-row';
+      const bar = document.createElement('div'); bar.className = 'sp-bar';
+      bar.append(
+        btn('↑', 'Monter', () => this._move(i, -1), i === 0),
+        btn('↓', 'Descendre', () => this._move(i, 1), i === devs.length - 1),
+        btn('Supprimer', 'Supprimer cet appareil', () => this._remove(i)),
+      );
+      const form = document.createElement('ha-form');
+      form.hass = this._hass;
+      form.schema = ROW_SCHEMA;
+      form.computeLabel = s => LABELS[s.name] || s.name;
+      form.data = dev;
+      form.addEventListener('value-changed', ev => {
+        ev.stopPropagation();
+        const cur = this._devices(), r = {};
+        Object.entries(ev.detail.value || {}).forEach(([k, v]) => { if (v !== '' && v != null) r[k] = v; });
+        if (!('entity' in r)) r.entity = '';
+        cur[i] = r;
+        this._emit({ ...this._config, devices: cur });
+      });
+      row.append(bar, form);
+      this._box.appendChild(row);
+      this._rows.push({ form });
+    });
+    this._box.appendChild(btn('+ Ajouter un appareil', 'Ajouter un appareil', () => {
+      this._emit({ ...this._config, devices: [...this._devices(), { entity: '' }] });
+      this._drawDevices();
+    })).classList.add('sp-add');
+  }
+
+  _move(i, dir) {
+    const cur = this._devices(), j = i + dir;
+    if (j < 0 || j >= cur.length) return;
+    [cur[i], cur[j]] = [cur[j], cur[i]];
+    this._emit({ ...this._config, devices: cur });
+    this._drawDevices();
+  }
+
+  _remove(i) {
+    const cur = this._devices();
+    cur.splice(i, 1);
+    this._emit({ ...this._config, devices: cur });
+    this._drawDevices();
   }
 }
 
@@ -376,4 +561,4 @@ window.customCards.push({
   description: "Flux d'énergie solaire animé : production, batterie, réseau et maison.",
   preview: true,
 });
-console.info('%c SOLAR-POWERFLOW-CARD %c v1.2.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');
+console.info('%c SOLAR-POWERFLOW-CARD %c v1.3.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');

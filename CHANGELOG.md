@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 1.3.0
+Nouvelle option, désactivée par défaut : le **détail de la consommation de la maison**.
+- `consumption_breakdown: ring` : l'anneau du cercle Maison se découpe en segments colorés, un par appareil, avec une légende sous la carte.
+- `devices` : liste de capteurs de puissance (nom, groupe et couleur facultatifs), avec un éditeur visuel (ajouter, supprimer, réordonner).
+- La part non détaillée (« Autres ») est la consommation de la maison moins les appareils affichés ; elle n'est jamais négative.
+- `breakdown_max` (5 par défaut), `breakdown_legend`, `group_devices`, `other_label`.
+- Appareils indisponibles comptés pour 0, avec une mention sous la légende.
+- Les noms (titre, appareils) sont échappés avant affichage.
+
 ## 1.2.0
 Toutes les nouveautés sont des **options désactivées par défaut** : une carte existante garde son aspect.
 - `layout` : disposition `standard`, `compact` (plus basse) ou `horizontal` (large et peu haute).

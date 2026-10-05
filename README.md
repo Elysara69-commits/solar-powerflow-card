@@ -1,6 +1,6 @@
 # ☀️ Solar Powerflow Card
 
-![version](https://img.shields.io/badge/version-1.2.0-fbbf24)
+![version](https://img.shields.io/badge/version-1.3.0-fbbf24)
 
 Carte Lovelace de **flux d'énergie solaire animé** : production, batterie, réseau et maison.
 Aucune dépendance, éditeur visuel inclus : les entités et toutes les options se règlent directement dans l'interface.
@@ -72,6 +72,62 @@ production → batterie, production → réseau, production → maison, batterie
 
 <p><img src="images/alerts.png" width="260" alt="Alertes visuelles"></p>
 
+### 🔌 Détail de la consommation (`consumption_breakdown: ring`)
+
+L'anneau du cercle **Maison** se découpe en segments colorés : un par appareil, proportionnel à sa puissance du moment. Une légende sous la carte donne le nom et la puissance de chacun. Ce qui n'est pas détaillé apparaît en gris, dans « Autres ».
+
+<p><img src="images/breakdown.png" width="300" alt="Anneau coloré de la consommation"> <img src="images/breakdown-group.png" width="300" alt="Appareils regroupés"></p>
+
+**Configuration** : dans l'éditeur visuel, section « Appareils à détailler » (ajouter, supprimer, monter, descendre), ou en YAML :
+
+```yaml
+consumption_breakdown: ring
+breakdown_max: 5            # appareils détaillés ; les autres sont regroupés dans « Autres »
+other_label: Autres
+devices:
+  - entity: sensor.prise_frigo_puissance
+    name: Réfrigérateur     # facultatif (sinon le nom de l'entité)
+  - entity: sensor.radiateur_salon_puissance
+    name: Radiateur salon
+    group: Chauffage        # facultatif
+    color: "#f97316"        # facultatif
+```
+
+| Option | Description | Défaut |
+|---|---|---|
+| `consumption_breakdown` | `off` ou `ring` | `off` |
+| `devices` | Liste de capteurs de **puissance** (W ou kW) | – |
+| `breakdown_max` | Nombre d'appareils affichés individuellement (les plus gros du moment) | `5` |
+| `breakdown_legend` | Afficher la légende sous la carte | `true` |
+| `group_devices` | Additionner les appareils qui ont le même `group` | `false` |
+| `other_label` | Nom de la part non détaillée | `Autres` |
+
+**Comment c'est calculé**
+- « Autres » = consommation de la maison (`load_entity`) − somme des appareils affichés, jamais en dessous de 0.
+- Le cercle est entièrement rempli : il montre la **répartition**, pas le niveau (le niveau est le chiffre au centre).
+- Les appareils de moins de 10 W ne sont pas affichés individuellement. Avec `breakdown_max`, seuls les plus gros du moment le sont ; leur couleur reste fixe, déterminée par leur place dans la liste.
+- Un appareil indisponible compte pour 0 et une mention « appareil indisponible » s'affiche.
+- Sans appareil dans la liste, la carte garde son anneau habituel.
+
+**À savoir**
+- Ajoutez uniquement des mesures **indépendantes** : une multiprise et les appareils branchés dessus feraient un double comptage.
+- Les capteurs ne se rafraîchissent pas tous au même moment : « Autres » peut varier un instant, ou tomber à 0 si la somme dépasse brièvement la consommation.
+- Un capteur qui annonce une puissance fixe quand l'appareil est « on » (au lieu de la mesurer) rend « Autres » moins exact.
+- La part « Autres » n'est pas une entité Home Assistant. Pour l'historiser, créez un capteur « template » :
+
+```yaml
+template:
+  - sensor:
+      - name: "Consommation non détaillée"
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >
+          {{ [ states('sensor.consommation_maison') | float(0)
+               - states('sensor.appareil_1_puissance') | float(0)
+               - states('sensor.appareil_2_puissance') | float(0), 0 ] | max }}
+```
+
 ## 📦 Installation
 
 ### Option A : HACS (dépôt personnalisé)
@@ -113,6 +169,10 @@ alert_battery_low: true
 battery_low_threshold: 15
 alert_no_production: true
 sun_entity: sun.sun
+consumption_breakdown: ring
+devices:
+  - entity: sensor.prise_frigo_puissance
+    name: Réfrigérateur
 ```
 
 | Option | Description | Défaut |
@@ -133,16 +193,17 @@ sun_entity: sun.sun
 | `alert_battery_full` / `battery_full_threshold` | Alerte batterie pleine et son seuil (%) | `false` / `99` |
 | `alert_battery_low` / `battery_low_threshold` | Alerte batterie faible et son seuil (%) | `false` / `15` |
 | `alert_no_production` / `sun_entity` | Alerte « aucune production en plein jour » et entité soleil | `false` / `sun.sun` |
+| `consumption_breakdown` / `devices` | Détail de la consommation par appareil (anneau coloré), voir plus haut | `off` / – |
 
 ## 🔄 Mises à jour
 
 Avec HACS, une mise à jour est proposée quand une nouvelle **release** est publiée sur GitHub :
-**Releases → Draft a new release**, tag `v1.2.0` (à faire évoluer à chaque version), puis **Publish release**.
+**Releases → Draft a new release**, tag `v1.3.0` (à faire évoluer à chaque version), puis **Publish release**.
 Le détail des versions est dans [CHANGELOG.md](CHANGELOG.md).
 
 ## 🛠️ Dépannage
 
 - *Custom element doesn't exist* : ressource non ajoutée, ou cache non vidé.
-- Après une mise à jour du fichier en installation manuelle, ajouter `?v=4` à l'URL de la ressource.
+- Après une mise à jour du fichier en installation manuelle, ajouter `?v=5` à l'URL de la ressource.
 
 Page explicative avec exemples : [`docs/solar-powerflow-card.html`](docs/solar-powerflow-card.html) (à télécharger puis ouvrir dans un navigateur).
