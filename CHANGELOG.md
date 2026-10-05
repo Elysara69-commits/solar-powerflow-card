@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 1.2.0
+Toutes les nouveautés sont des **options désactivées par défaut** : une carte existante garde son aspect.
+- `layout` : disposition `standard`, `compact` (plus basse) ou `horizontal` (large et peu haute).
+- `show_battery` / `show_grid` : masquer la batterie ou le réseau ; le reste est recentré.
+- `direct_flows` : flux directs production → batterie, production → réseau, batterie → maison, réseau → maison.
+- Alertes : `alert_battery_full`, `alert_battery_low` (seuil réglable), `alert_no_production` (production nulle en plein jour, via `sun.sun`).
+- Le clignotement automatique sous 15 % de batterie n'existe plus : il s'active avec `alert_battery_low`.
+- Texte du cercle central un peu réduit pour rester dans le cercle.
+- README : captures de chaque option et GIF animé.
+
 ## 1.1.1
 - Correction du clignotement de la carte à chaque mise à jour des capteurs : l'affichage est maintenant mis à jour sans être recréé, donc les animations ne sont plus relancées.
 - Vitesse des points animés par paliers, pour éviter les sauts quand la puissance varie légèrement.

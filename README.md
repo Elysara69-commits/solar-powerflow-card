@@ -1,11 +1,13 @@
 # ☀️ Solar Powerflow Card
 
-![version](https://img.shields.io/badge/version-1.1.0-fbbf24)
+![version](https://img.shields.io/badge/version-1.2.0-fbbf24)
 
 Carte Lovelace de **flux d'énergie solaire animé** : production, batterie, réseau et maison.
-Aucune dépendance, éditeur visuel inclus : les entités se choisissent directement dans l'interface.
+Aucune dépendance, éditeur visuel inclus : les entités et toutes les options se règlent directement dans l'interface.
 
-![Aperçu de la carte](images/preview.png)
+<p align="center"><img src="images/demo.gif" alt="Démonstration animée de la carte" width="440"></p>
+
+<p align="center"><img src="images/preview.png" alt="Aperçu de la carte" width="440"></p>
 
 ## 🧭 Comment fonctionne la carte
 
@@ -33,6 +35,42 @@ Aucune dépendance, éditeur visuel inclus : les entités se choisissent directe
 
 > Les puissances sont lues en W. Les capteurs en **kW** sont convertis automatiquement.
 > Une entité non renseignée ou introuvable compte pour 0. Sans aucune entité trouvée, la carte s'affiche en **mode démo**.
+
+## 🎛️ Options d'affichage
+
+Toutes ces options sont **désactivées par défaut** : l'aspect de la carte ne change que si tu les actives, dans l'éditeur visuel ou en YAML.
+
+### 📐 Disposition (`layout`)
+
+| `standard` (défaut) | `compact` | `horizontal` |
+|:---:|:---:|:---:|
+| <img src="images/preview.png" width="220"> | <img src="images/compact.png" width="220"> | <img src="images/horizontal.png" width="300"> |
+| Vertical, avec tous les libellés | Plus bas, cercles plus petits : petits tableaux de bord | Large et peu haute : bandeau, tablette murale |
+
+### 🙈 Masquer la batterie ou le réseau (`show_battery`, `show_grid`)
+
+Avec `show_battery: false` ou `show_grid: false`, le cercle est retiré et le reste de la carte est recentré. Sans réseau, le cercle central affiche « – » car l'autonomie ne peut plus être calculée.
+
+<p><img src="images/no-battery.png" width="260" alt="Carte sans batterie"></p>
+
+### 🔀 Flux directs (`direct_flows: true`)
+
+Au lieu de tout faire passer par le cercle central, les points relient directement :
+production → batterie, production → réseau, production → maison, batterie → maison, réseau → maison.
+
+<p><img src="images/direct.png" width="260" alt="Flux directs"></p>
+
+> ℹ️ Les capteurs mesurent les puissances de chaque élément, pas l'origine de chaque watt. La répartition affichée est donc **estimée** : la production alimente d'abord la batterie en charge, puis le réseau (injection), puis la maison. Le reste de la consommation vient de la batterie puis du réseau.
+
+### 🚨 Alertes visuelles
+
+| Option | Effet | Réglage |
+|---|---|---|
+| `alert_battery_full` | « PLEINE » en vert avec un halo sur la batterie | `battery_full_threshold` (défaut `99` %) |
+| `alert_battery_low` | « ⚠ FAIBLE » en rouge, la batterie clignote | `battery_low_threshold` (défaut `15` %) |
+| `alert_no_production` | « ⚠ AUCUNE PRODUCTION » en rouge quand la production est nulle alors que le soleil est levé (hauteur > 10°) | `sun_entity` (défaut `sun.sun`) |
+
+<p><img src="images/alerts.png" width="260" alt="Alertes visuelles"></p>
 
 ## 📦 Installation
 
@@ -64,6 +102,17 @@ grid_export_entity: sensor.reseau_injection
 grid_import_entity: sensor.reseau_soutirage
 max_power: 5000
 battery_capacity: 6.5
+# Options facultatives
+layout: compact              # standard | compact | horizontal
+show_battery: true
+show_grid: true
+direct_flows: false
+alert_battery_full: true
+battery_full_threshold: 99
+alert_battery_low: true
+battery_low_threshold: 15
+alert_no_production: true
+sun_entity: sun.sun
 ```
 
 | Option | Description | Défaut |
@@ -78,18 +127,22 @@ battery_capacity: 6.5
 | `grid_import_entity` | Puissance soutirée au réseau | – |
 | `max_power` | Puissance (W) d'un cercle plein et de la vitesse maximale des animations | `5000` |
 | `battery_capacity` | Capacité de la batterie (kWh). `0` pour masquer l'énergie stockée | `0` |
-
-Sans batterie : laisser les trois entités de batterie vides.
+| `layout` | `standard`, `compact` ou `horizontal` | `standard` |
+| `show_battery` / `show_grid` | Afficher ou masquer la batterie / le réseau | `true` |
+| `direct_flows` | Flux directs entre les éléments | `false` |
+| `alert_battery_full` / `battery_full_threshold` | Alerte batterie pleine et son seuil (%) | `false` / `99` |
+| `alert_battery_low` / `battery_low_threshold` | Alerte batterie faible et son seuil (%) | `false` / `15` |
+| `alert_no_production` / `sun_entity` | Alerte « aucune production en plein jour » et entité soleil | `false` / `sun.sun` |
 
 ## 🔄 Mises à jour
 
 Avec HACS, une mise à jour est proposée quand une nouvelle **release** est publiée sur GitHub :
-**Releases → Draft a new release**, tag `v1.1.0` (à faire évoluer à chaque version), puis **Publish release**.
+**Releases → Draft a new release**, tag `v1.2.0` (à faire évoluer à chaque version), puis **Publish release**.
 Le détail des versions est dans [CHANGELOG.md](CHANGELOG.md).
 
 ## 🛠️ Dépannage
 
 - *Custom element doesn't exist* : ressource non ajoutée, ou cache non vidé.
-- Après une mise à jour du fichier en installation manuelle, ajouter `?v=2` à l'URL de la ressource.
+- Après une mise à jour du fichier en installation manuelle, ajouter `?v=4` à l'URL de la ressource.
 
 Page explicative avec exemples : [`docs/solar-powerflow-card.html`](docs/solar-powerflow-card.html) (à télécharger puis ouvrir dans un navigateur).

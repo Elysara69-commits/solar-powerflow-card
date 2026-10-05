@@ -18,6 +18,9 @@ th{color:var(--mut);font-weight:600}
 .scen figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px}
 .scen figcaption{font-size:.85rem;color:var(--mut);padding:4px 6px 2px}
 .dotl{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+figure.opt{margin:0}figure.opt img{max-width:100%;border-radius:14px;display:block}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin:14px 0}
+.opts figcaption{font-size:.85rem;color:var(--mut);padding:6px 2px}
 </style></head><body><main>
 <h1>Solar Powerflow Card</h1>
 <p>Une carte Lovelace qui montre en direct où va l'énergie de votre installation solaire : production, batterie, réseau et maison. Les points qui circulent indiquent le sens du flux, et leur vitesse suit la puissance.</p>
@@ -72,6 +75,36 @@ cards:
   - type: custom:solar-powerflow-card
     pv_entity: sensor.production_solaire
     load_entity: sensor.consommation_maison</pre>
+
+<h2>Options d'affichage</h2>
+<p>Toutes les options ci-dessous sont <b>désactivées par défaut</b> : la carte ne change que si vous les activez, dans l'éditeur visuel ou en YAML.</p>
+<p style="text-align:center"><img src="../images/demo.gif" alt="Démonstration animée" style="max-width:100%;width:440px;border-radius:14px"></p>
+<div class="opts">
+<figure class="opt"><img src="../images/compact.png" alt="Compact"><figcaption><b>layout: compact</b> : plus basse, cercles plus petits.</figcaption></figure>
+<figure class="opt"><img src="../images/horizontal.png" alt="Horizontal"><figcaption><b>layout: horizontal</b> : large et peu haute, pour un bandeau ou une tablette murale.</figcaption></figure>
+<figure class="opt"><img src="../images/no-battery.png" alt="Sans batterie"><figcaption><b>show_battery: false</b> (ou <code>show_grid: false</code>) : le cercle est retiré, le reste est recentré.</figcaption></figure>
+<figure class="opt"><img src="../images/direct.png" alt="Flux directs"><figcaption><b>direct_flows: true</b> : production → batterie, réseau et maison directement. Répartition estimée.</figcaption></figure>
+<figure class="opt"><img src="../images/alerts.png" alt="Alertes"><figcaption><b>alert_battery_full</b>, <b>alert_battery_low</b>, <b>alert_no_production</b> : textes colorés et clignotement.</figcaption></figure>
+</div>
+<pre>type: custom:solar-powerflow-card
+pv_entity: sensor.production_solaire
+load_entity: sensor.consommation_maison
+soc_entity: sensor.batterie_niveau
+battery_charge_entity: sensor.batterie_charge
+battery_discharge_entity: sensor.batterie_decharge
+grid_export_entity: sensor.reseau_injection
+grid_import_entity: sensor.reseau_soutirage
+layout: compact
+direct_flows: true
+alert_battery_low: true
+battery_low_threshold: 20
+alert_no_production: true</pre>
+<table>
+<tr><th>Alerte</th><th>Condition</th></tr>
+<tr><td>Batterie pleine</td><td>Niveau ≥ <code>battery_full_threshold</code> (99 % par défaut)</td></tr>
+<tr><td>Batterie faible</td><td>Niveau ≤ <code>battery_low_threshold</code> (15 % par défaut)</td></tr>
+<tr><td>Aucune production</td><td>Production ≤ 10 W alors que <code>sun.sun</code> (ou <code>sun_entity</code>) indique le soleil levé à plus de 10° au-dessus de l'horizon</td></tr>
+</table>
 
 <h2>Réglages</h2>
 <table>
