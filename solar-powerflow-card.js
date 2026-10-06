@@ -1,11 +1,10 @@
-/* Solar Powerflow Card v1.3.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
-const ENTITY_KEYS = ['pv_entity','load_entity','soc_entity','battery_charge_entity','battery_discharge_entity','grid_export_entity','grid_import_entity'];
+/* Solar Powerflow Card v1.4.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
 const STUB = {
   title: 'INSTALLATION PV', layout: 'standard', max_power: 5000, battery_capacity: 0,
   show_battery: true, show_grid: true, direct_flows: false,
   alert_battery_full: false, battery_full_threshold: 99,
   alert_battery_low: false, battery_low_threshold: 15,
-  alert_no_production: false,
+  alert_no_production: false, grid_import_threshold: 50, grid_power_invert: false, battery_power_invert: false,
   consumption_breakdown: 'off', breakdown_max: 5, breakdown_legend: true, group_devices: false, other_label: 'Autres',
 };
 const DEFAULTS = { ...STUB, sun_entity: 'sun.sun' };
@@ -18,6 +17,21 @@ const DEMO_DEVS = [
 const DEMO = { pv: 3480, load: 2100, soc: 64, ch: 900, dis: 0, exp: 480, imp: 0 };
 const SLATE = '#64748b';
 const clamp = x => Math.max(0, Math.min(1, x));
+const gridMode = c => c.grid_mode || (c.grid_power_entity ? 'signed' : 'separate');
+const batteryMode = c => c.battery_mode || (c.battery_power_entity ? 'signed' : 'separate');
+
+/* Couleurs choisies par leur nom (l'hexadécimal reste accepté en YAML) */
+const COLORS = { bleu: '#38bdf8', rouge: '#ef4444', orange: '#f97316', jaune: '#facc15', vert: '#34d399', violet: '#a78bfa', rose: '#f472b6', turquoise: '#22d3ee', marron: '#b45309', blanc: '#e2e8f0' };
+const COLOR_ALIASES = { blue: 'bleu', red: 'rouge', yellow: 'jaune', green: 'vert', purple: 'violet', pink: 'rose', cyan: 'turquoise', brown: 'marron', white: 'blanc' };
+function resolveColor(v) {
+  if (!v) return '';
+  const k = String(v).trim().toLowerCase();
+  if (COLORS[k]) return COLORS[k];
+  if (COLOR_ALIASES[k]) return COLORS[COLOR_ALIASES[k]];
+  if (/^#[0-9a-f]{3,8}$/.test(k)) return k;
+  if (/^(rgb|hsl)a?\([0-9.,%\s/]+\)$/.test(k)) return k;
+  return '';
+}
 const fmt = w => w >= 1000 ? (w / 1000).toFixed(2).replace('.', ',') + ' kW' : Math.round(w) + ' W';
 
 /* ---------- Géométrie des trois dispositions ---------- */
@@ -28,6 +42,10 @@ const LAYOUTS = {
 };
 
 function geometry(layout, showBat, showGrid) {
+  if (layout === 'mini') {
+    const z = { x: 0, y: 0 };
+    return { layout: 'mini', R: 0, hubR: 0, w: 0, h: 0, pos: { pv: z, hub: z, house: z, bat: showBat ? z : null, grid: showGrid ? z : null } };
+  }
   const key = LAYOUTS[layout] ? layout : 'standard';
   const L = LAYOUTS[key];
   if (key === 'horizontal') {
@@ -49,7 +67,7 @@ const PALETTE = ['#38bdf8', '#f97316', '#a78bfa', '#34d399', '#f472b6', '#facc15
 const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 function breakdown(conso, devs, c) {
-  let items = devs.map(v => ({ i: v.i, name: v.name, color: v.color || PALETTE[v.i % PALETTE.length], group: v.group, w: v.w }));
+  let items = devs.map(v => ({ i: v.i, name: v.name, color: resolveColor(v.color) || PALETTE[v.i % PALETTE.length], group: v.group, w: v.w }));
   if (c.group_devices) {
     const map = new Map(), out = [];
     items.forEach(it => {
@@ -85,7 +103,7 @@ function segsSvg(n, R, k, C) {
 
 function legendHtml(m) {
   const b = m.breakdown;
-  if (!b || !b.legend) return '<div class="legend"></div>';
+  if (!b || !b.legend || m.g.layout === 'mini') return '<div class="legend"></div>';
   const items = b.segs.map(s => `<div class="lg"><span class="ld" style="background:${s.color}"></span><span class="ln">${esc(s.name)}</span><span class="lv">${fmt(s.w)}</span></div>`).join('');
   const off = b.offline ? `<div class="lo">⚠ ${b.offline} appareil${b.offline > 1 ? 's' : ''} indisponible${b.offline > 1 ? 's' : ''}</div>` : '';
   return `<div class="legend">${items}${off}</div>`;
@@ -99,7 +117,12 @@ function buildModel(d, c, sunUp, devs) {
   const g = geometry(c.layout, showBat, showGrid), P = g.pos;
   const pv = d.pv, conso = d.load, soc = d.soc;
   const ch = showBat ? d.ch : 0, dis = showBat ? d.dis : 0;
-  const exp = showGrid ? d.exp : 0, imp = showGrid ? d.imp : 0;
+  const exp = showGrid ? d.exp : 0, impRaw = showGrid ? d.imp : 0;
+  // le soutirage n'est signalé (flux, badge, autonomie) qu'au-dessus d'un seuil (50 W par défaut)
+  const tImp = Number(c.grid_import_threshold);
+  const impT = Math.max(10, c.grid_import_threshold != null && c.grid_import_threshold !== '' && Number.isFinite(tImp) ? tImp : 50);
+  const imp = impRaw > impT ? impRaw : 0;
+  const gridSigned = gridMode(c) === 'signed';
   const E = k => c[k] || '';
 
   let txt = 'VEILLE', col = '#64748b';
@@ -111,7 +134,7 @@ function buildModel(d, c, sunUp, devs) {
   else if (imp > 10) { txt = 'SOUTIRAGE RÉSEAU'; col = '#f87171'; }
 
   const cHouse = (conso > 10 && pv >= conso) ? '#22c55e' : '#38bdf8';
-  const gridP = exp > 10 ? exp : imp;
+  const gridP = exp > 10 ? exp : impRaw;
   const cGrid = exp > 10 ? '#c084fc' : (imp > 10 ? '#f87171' : SLATE);
   const gridSub = exp > 10 ? '→ INJECTION' : (imp > 10 ? '← SOUTIRAGE' : 'INACTIF');
   const autonomie = (conso > 10 && showGrid) ? Math.round(clamp((conso - imp) / conso) * 100) : null;
@@ -119,30 +142,32 @@ function buildModel(d, c, sunUp, devs) {
 
   // production (+ alerte « aucune production en plein jour »)
   let pvCol = pv > 10 ? '#fbbf24' : SLATE, pvSub = pv > 10 ? 'EN PRODUCTION' : 'AU REPOS', pvCls = '';
-  if (c.alert_no_production && sunUp && pv <= 10) { pvCol = '#f87171'; pvSub = '⚠ AUCUNE PRODUCTION'; pvCls = 'lowbat'; }
+  let pvMini = pv > 10 ? 'EN PROD.' : 'AU REPOS';
+  if (c.alert_no_production && sunUp && pv <= 10) { pvCol = '#f87171'; pvSub = '⚠ AUCUNE PRODUCTION'; pvMini = '⚠ AUCUNE PROD.'; pvCls = 'lowbat'; }
 
   // batterie (+ alertes pleine / niveau bas)
   const batPow = ch > 10 ? '▲ ' + fmt(ch) : (dis > 10 ? '▼ ' + fmt(dis) : '');
   let batCol = ch > 10 ? '#22c55e' : (dis > 10 ? '#2dd4bf' : (soc < 30 ? '#ef4444' : (soc < 70 ? '#f97316' : '#22c55e')));
   let batSub = batPow || 'REPOS', batSubCol = batCol, batCls = '', batGlow = false;
+  let batMini = batPow || 'REPOS';
   if (showBat) {
     const full = Number(c.battery_full_threshold) || 99, low = Number(c.battery_low_threshold) || 15;
     if (c.alert_battery_low && soc <= low) {
       batCol = batSubCol = '#ef4444'; batCls = 'lowbat';
-      batSub = '⚠ FAIBLE' + (batPow ? ' · ' + batPow : '');
+      batSub = '⚠ FAIBLE' + (batPow ? ' · ' + batPow : ''); batMini = '⚠ FAIBLE';
     } else if (c.alert_battery_full && soc >= full) {
       batSubCol = '#22c55e'; batGlow = true;
-      batSub = 'PLEINE' + (batPow ? ' · ' + batPow : '');
+      batSub = 'PLEINE' + (batPow ? ' · ' + batPow : ''); batMini = 'PLEINE';
     }
   }
 
   const bd = c.consumption_breakdown === 'ring' ? breakdown(conso, devs || [], c) : null;
   const nodes = {
-    pv: { ...P.pv, color: pvCol, icon: 'mdi:solar-power-variant', val: fmt(pv), frac: clamp(pv / max), ent: E('pv_entity'), cls: pvCls, name: 'PRODUCTION', sub: pvSub, subCol: pvCol, spin: pv > 10 },
-    house: { ...P.house, color: cHouse, icon: 'mdi:home-lightning-bolt', val: fmt(conso), frac: clamp(conso / max), ent: E('load_entity'), cls: '', name: 'MAISON', sub: '', subCol: '', segs: bd ? bd.segs : null },
+    pv: { ...P.pv, color: pvCol, icon: 'mdi:solar-power-variant', val: fmt(pv), frac: clamp(pv / max), ent: E('pv_entity'), cls: pvCls, name: 'PRODUCTION', sub: pvSub, subCol: pvCol, spin: pv > 10, mini: { t: pvMini, c: pvCol } },
+    house: { ...P.house, color: cHouse, icon: 'mdi:home-lightning-bolt', val: fmt(conso), frac: clamp(conso / max), ent: E('load_entity'), cls: '', name: 'MAISON', sub: '', subCol: '', segs: bd ? bd.segs : null, mini: { t: autonomie !== null ? 'AUTONOMIE ' + autonomie + '%' : '', c: '#94a3b8' } },
     bat: showBat ? { ...P.bat, color: batCol, icon: 'mdi:home-battery', val: Math.round(soc) + '%', frac: clamp(soc / 100), ent: E('soc_entity'), cls: batCls, glow: batGlow,
-      name: 'BATTERIE' + (cap > 0 ? ' · ' + (soc * cap / 100).toFixed(1).replace('.', ',') + ' kWh' : ''), sub: batSub, subCol: batSubCol } : null,
-    grid: showGrid ? { ...P.grid, color: cGrid, icon: 'mdi:transmission-tower', val: fmt(gridP), frac: clamp(gridP / max), ent: E(exp > 10 ? 'grid_export_entity' : 'grid_import_entity'), cls: '', name: 'RÉSEAU', sub: gridSub, subCol: cGrid } : null,
+      name: 'BATTERIE' + (cap > 0 ? ' · ' + (soc * cap / 100).toFixed(1).replace('.', ',') + ' kWh' : ''), sub: batSub, subCol: batSubCol, mini: { t: batMini, c: batSubCol } } : null,
+    grid: showGrid ? { ...P.grid, color: cGrid, icon: 'mdi:transmission-tower', val: fmt(gridP), frac: clamp(gridP / max), ent: E(gridSigned ? 'grid_power_entity' : (exp > 10 ? 'grid_export_entity' : 'grid_import_entity')), cls: '', name: 'RÉSEAU', sub: gridSub, subCol: cGrid, mini: { t: gridSub, c: cGrid } } : null,
   };
 
   // chemins entre deux éléments (du bord d'un cercle au bord de l'autre)
@@ -154,7 +179,9 @@ function buildModel(d, c, sunUp, devs) {
   const flows = [], tracks = [];
   const add = (a, b, color, w) => { if (P[a] && P[b]) flows.push({ from: a, to: b, color, w, d: path(a, b) }); };
   const trk = pairs => pairs.forEach(([a, b]) => { if (P[a] && P[b]) tracks.push(path(a, b)); });
-  if (c.direct_flows) {
+  if (g.layout === 'mini') {
+    // pas de flux animés dans la disposition mini
+  } else if (c.direct_flows) {
     // répartition estimée : la production alimente d'abord la batterie, puis le réseau, puis la maison
     const pvBat = Math.min(ch, pv), pvGrid = Math.min(exp, Math.max(0, pv - pvBat));
     const pvHouse = Math.max(0, pv - pvBat - pvGrid);
@@ -197,6 +224,16 @@ function nodeSvg(m, key) {
       </foreignObject>
       ${T(n.x, (n.y + 17 * k).toFixed(1), n.val, '#f1f5f9', (14 * k).toFixed(1), 700, 0)}
     </g>`;
+}
+
+function miniHtml(m) {
+  const tile = key => {
+    const n = m.nodes[key];
+    if (!n) return '';
+    const style = (n.ent ? 'cursor:pointer;' : '') + (n.glow ? `filter:drop-shadow(0 0 6px ${n.color});` : '');
+    return `<div class="tile ${n.cls || ''}" ${n.ent ? `data-entity="${esc(n.ent)}"` : ''} style="${style}"><ha-icon icon="${n.icon}" style="color:${n.color};--mdc-icon-size:18px;"></ha-icon><div class="tv">${n.val}</div><div class="ts" style="color:${n.mini.c}">${n.mini.t}</div></div>`;
+  };
+  return `<div class="minirow">${['pv', 'house', 'bat', 'grid'].map(tile).join('')}</div>`;
 }
 
 function labelSvg(m, key) {
@@ -252,6 +289,13 @@ const CSS = `
     box-shadow:0 0 26px rgba(251,191,36,.10),inset 0 0 50px rgba(2,6,23,.7)}
   .card.compact{padding:10px 12px 12px;border-radius:18px}
   .card.compact .t2{display:none}
+  .card.mini{padding:10px 6px;border-radius:16px}
+  .card.mini .head{display:none}
+  .minirow{display:flex;align-items:stretch}
+  .tile{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px 4px}
+  .tile+.tile{border-left:1px solid rgba(148,163,184,.12)}
+  .tv{font-size:15px;font-weight:700;color:#f1f5f9;white-space:nowrap}
+  .ts{font-size:7.5px;font-weight:700;letter-spacing:.8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;min-height:9px}
   .head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
   .t1{font-size:15px;font-weight:800;letter-spacing:2.5px;color:#fde68a;text-shadow:0 0 10px #fbbf2488}
   .t2{font-size:9px;letter-spacing:2px;color:#64748b;margin-top:2px}
@@ -310,7 +354,7 @@ class SolarPowerflowCard extends HTMLElement {
 
   set hass(hass) { this._hass = hass; this._update(); }
   getCardSize() {
-    const l = this._config && this._config.layout, base = l === 'compact' ? 5 : (l === 'horizontal' ? 4 : 8);
+    const l = this._config && this._config.layout, base = l === 'mini' ? 2 : (l === 'compact' ? 5 : (l === 'horizontal' ? 4 : 8));
     return base + (this._config && this._config.consumption_breakdown === 'ring' ? 2 : 0);
   }
 
@@ -331,9 +375,16 @@ class SolarPowerflowCard extends HTMLElement {
       pv: this._read('pv_entity'), load: this._read('load_entity'), soc: this._read('soc_entity'),
       ch: this._read('battery_charge_entity'), dis: this._read('battery_discharge_entity'),
       exp: this._read('grid_export_entity'), imp: this._read('grid_import_entity'),
+      gp: this._read('grid_power_entity'), bp: this._read('battery_power_entity'),
     };
     const demo = Object.values(raw).every(v => v === null);
-    const d = demo ? DEMO : Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, v === null ? 0 : v]));
+    const cfg = this._config;
+    const d = demo ? { ...DEMO } : Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, v === null ? 0 : v]));
+    if (!demo) {
+      // un seul capteur signé : batterie (positif = charge) et réseau (positif = soutirage), sens inversable
+      if (batteryMode(cfg) === 'signed') { const v = d.bp * (cfg.battery_power_invert ? -1 : 1); d.ch = Math.max(0, v); d.dis = Math.max(0, -v); }
+      if (gridMode(cfg) === 'signed') { const v = d.gp * (cfg.grid_power_invert ? -1 : 1); d.imp = Math.max(0, v); d.exp = Math.max(0, -v); }
+    }
     const sun = this._hass.states[this._config.sun_entity || 'sun.sun'];
     const sunUp = !!(sun && sun.state === 'above_horizon' && Number(sun.attributes && sun.attributes.elevation) > 10);
     const list = Array.isArray(this._config.devices) ? this._config.devices : [];
@@ -359,7 +410,7 @@ class SolarPowerflowCard extends HTMLElement {
           <div><div class="t1">${esc(c.title || '')}</div><div class="t2">FLUX D'ÉNERGIE · ${demo ? 'DÉMO' : 'TEMPS RÉEL'}</div></div>
           <div class="badge" style="color:${col};border:1px solid ${col}66;background:${col}14"><span class="dot" style="background:${col};box-shadow:0 0 8px ${col}"></span>${txt}</div>
         </div>
-        ${svgFromModel(m)}
+        ${m.g.layout === 'mini' ? miniHtml(m) : svgFromModel(m)}
         ${legendHtml(m)}
       </div>`;
     const root = this.shadowRoot;
@@ -374,82 +425,130 @@ class SolarPowerflowCard extends HTMLElement {
   }
 }
 
-/* ---------- Éditeur visuel ---------- */
+/* ---------- Éditeur visuel (sections repliables, champs affichés selon les besoins) ---------- */
 const LABELS = {
   title: 'Titre de la carte',
+  layout: 'Disposition de la carte',
+  max_power: "Puissance max de l'installation (W)",
   pv_entity: 'Production solaire (W)',
   load_entity: 'Consommation maison (W)',
-  soc_entity: 'Batterie : niveau de charge (%)',
-  battery_charge_entity: 'Batterie : puissance de charge (W)',
-  battery_discharge_entity: 'Batterie : puissance de décharge (W)',
-  grid_export_entity: 'Réseau : injection (W)',
-  grid_import_entity: 'Réseau : soutirage (W)',
-  max_power: "Puissance max de l'installation (W)",
-  battery_capacity: 'Capacité de la batterie (kWh)',
-  layout: 'Disposition de la carte',
   show_battery: 'Afficher la batterie',
+  battery_mode: 'Capteurs de la batterie',
+  soc_entity: 'Niveau de charge (%)',
+  battery_charge_entity: 'Puissance de charge (W)',
+  battery_discharge_entity: 'Puissance de décharge (W)',
+  battery_power_entity: 'Puissance de la batterie (W, positive ou négative)',
+  battery_power_invert: 'Inverser le sens (positif = décharge)',
+  battery_capacity: 'Capacité de la batterie (kWh)',
   show_grid: 'Afficher le réseau',
+  grid_mode: 'Capteurs du réseau',
+  grid_export_entity: 'Injection (W)',
+  grid_import_entity: 'Soutirage (W)',
+  grid_power_entity: 'Puissance du réseau (W, positive ou négative)',
+  grid_power_invert: 'Inverser le sens (positif = injection)',
+  grid_import_threshold: 'Soutirage signalé au-dessus de (W)',
   direct_flows: 'Flux directs (production → batterie / réseau)',
   alert_battery_full: 'Alerte : batterie pleine',
   battery_full_threshold: 'Batterie pleine à partir de (%)',
   alert_battery_low: 'Alerte : batterie faible',
   battery_low_threshold: 'Batterie faible en dessous de (%)',
   alert_no_production: 'Alerte : aucune production en plein jour',
-  sun_entity: 'Entité soleil (pour l\'alerte de production)',
+  sun_entity: "Entité soleil (pour l'alerte de production)",
   consumption_breakdown: 'Détail de la consommation de la maison',
-  breakdown_max: 'Nombre d\'appareils détaillés (les autres sont regroupés)',
+  breakdown_max: "Nombre d'appareils détaillés (les autres sont regroupés)",
   breakdown_legend: 'Afficher la légende sous la carte',
   group_devices: 'Regrouper les appareils ayant le même groupe',
   other_label: 'Nom de la part non détaillée',
   entity: 'Capteur de puissance',
   name: 'Nom (facultatif)',
   group: 'Groupe (facultatif)',
-  color: 'Couleur (facultatif, ex. #38bdf8)',
+  color: 'Couleur',
 };
-const sel = name => ({ name, selector: { entity: { domain: 'sensor' } } });
+const HELPERS = {
+  battery_power_entity: 'Valeur positive = charge, valeur négative = décharge.',
+  grid_power_entity: 'Valeur positive = soutirage, valeur négative = injection.',
+  grid_import_threshold: "En dessous, le soutirage est ignoré : pas de flux, pas de badge, autonomie non réduite.",
+};
+const ent = (name, domain = 'sensor') => ({ name, selector: { entity: { domain } } });
 const bool = name => ({ name, selector: { boolean: {} } });
 const pct = name => ({ name, selector: { number: { min: 1, max: 100, step: 1, mode: 'box' } } });
-const SCHEMA = [
-  { name: 'title', selector: { text: {} } },
-  ...ENTITY_KEYS.map(sel),
-  { type: 'grid', name: '', schema: [
-    { name: 'max_power', selector: { number: { min: 500, max: 100000, step: 100, mode: 'box' } } },
-    { name: 'battery_capacity', selector: { number: { min: 0, max: 200, step: 0.1, mode: 'box' } } },
+const num = (name, min, max, step) => ({ name, selector: { number: { min, max, step, mode: 'box' } } });
+const choice = (name, options) => ({ name, selector: { select: { mode: 'dropdown', options } } });
+const SIGNED = 'Un seul capteur : valeur positive ou négative';
+const COLOR_OPTIONS = [
+  { value: 'auto', label: 'Automatique' }, { value: 'bleu', label: '🔵 Bleu' }, { value: 'rouge', label: '🔴 Rouge' },
+  { value: 'orange', label: '🟠 Orange' }, { value: 'jaune', label: '🟡 Jaune' }, { value: 'vert', label: '🟢 Vert' },
+  { value: 'violet', label: '🟣 Violet' }, { value: 'rose', label: '🌸 Rose' }, { value: 'turquoise', label: '💠 Turquoise' },
+  { value: 'marron', label: '🟤 Marron' }, { value: 'blanc', label: '⚪ Blanc' },
+];
+
+const SECTIONS = [
+  { id: 'general', open: true, title: () => 'Général', schema: () => [
+    { name: 'title', selector: { text: {} } },
+    choice('layout', [
+      { value: 'standard', label: 'Standard (vertical)' },
+      { value: 'compact', label: 'Compact (plus bas)' },
+      { value: 'horizontal', label: 'Horizontal (large)' },
+      { value: 'mini', label: 'Mini (une seule ligne)' },
+    ]),
+    num('max_power', 500, 100000, 100),
   ] },
-  { name: 'layout', selector: { select: { mode: 'dropdown', options: [
-    { value: 'standard', label: 'Standard (vertical)' },
-    { value: 'compact', label: 'Compact (plus bas)' },
-    { value: 'horizontal', label: 'Horizontal (large)' },
-  ] } } },
-  { type: 'grid', name: '', schema: [bool('show_battery'), bool('show_grid')] },
-  bool('direct_flows'),
-  { type: 'grid', name: '', schema: [bool('alert_battery_full'), pct('battery_full_threshold')] },
-  { type: 'grid', name: '', schema: [bool('alert_battery_low'), pct('battery_low_threshold')] },
-  bool('alert_no_production'),
-  { name: 'sun_entity', selector: { entity: { domain: 'sun' } } },
-  { name: 'consumption_breakdown', selector: { select: { mode: 'dropdown', options: [
-    { value: 'off', label: 'Désactivé' },
-    { value: 'ring', label: 'Anneau coloré du cercle Maison' },
-  ] } } },
-  { type: 'grid', name: '', schema: [
-    { name: 'breakdown_max', selector: { number: { min: 1, max: 12, step: 1, mode: 'box' } } },
-    bool('breakdown_legend'),
-  ] },
-  { type: 'grid', name: '', schema: [bool('group_devices'), { name: 'other_label', selector: { text: {} } }] },
+  { id: 'prod', open: true, title: () => 'Production et consommation', schema: () => [ent('pv_entity'), ent('load_entity')] },
+  { id: 'bat', open: true, title: c => 'Batterie' + (c.show_battery === false ? ' · masquée' : ''), schema: c => {
+    const s = [bool('show_battery')];
+    if (c.show_battery === false) return s;
+    s.push(choice('battery_mode', [{ value: 'separate', label: 'Deux capteurs : charge et décharge' }, { value: 'signed', label: SIGNED }]), ent('soc_entity'));
+    if (c.battery_mode === 'signed') s.push(ent('battery_power_entity'), bool('battery_power_invert'));
+    else s.push(ent('battery_charge_entity'), ent('battery_discharge_entity'));
+    s.push(num('battery_capacity', 0, 200, 0.1));
+    return s;
+  } },
+  { id: 'grid', open: true, title: c => 'Réseau' + (c.show_grid === false ? ' · masqué' : ''), schema: c => {
+    const s = [bool('show_grid')];
+    if (c.show_grid === false) return s;
+    s.push(choice('grid_mode', [{ value: 'separate', label: 'Deux capteurs : injection et soutirage' }, { value: 'signed', label: SIGNED }]));
+    if (c.grid_mode === 'signed') s.push(ent('grid_power_entity'), bool('grid_power_invert'));
+    else s.push(ent('grid_export_entity'), ent('grid_import_entity'));
+    s.push(num('grid_import_threshold', 10, 5000, 10));
+    return s;
+  } },
+  { id: 'display', open: false, title: () => 'Affichage', schema: () => [bool('direct_flows')] },
+  { id: 'alerts', open: false, title: c => {
+    const n = [c.alert_battery_full, c.alert_battery_low, c.alert_no_production].filter(Boolean).length;
+    return 'Alertes' + (n ? ' · ' + n + (n > 1 ? ' actives' : ' active') : '');
+  }, schema: c => {
+    const s = [];
+    if (c.show_battery !== false) {
+      s.push(bool('alert_battery_full')); if (c.alert_battery_full) s.push(pct('battery_full_threshold'));
+      s.push(bool('alert_battery_low')); if (c.alert_battery_low) s.push(pct('battery_low_threshold'));
+    }
+    s.push(bool('alert_no_production')); if (c.alert_no_production) s.push(ent('sun_entity', 'sun'));
+    return s;
+  } },
+  { id: 'breakdown', open: false, devices: true, title: c => 'Détail de la consommation' + (c.consumption_breakdown === 'ring' ? ' · activé' : ''), schema: c => {
+    const s = [choice('consumption_breakdown', [{ value: 'off', label: 'Désactivé' }, { value: 'ring', label: 'Anneau coloré du cercle Maison' }])];
+    if (c.consumption_breakdown === 'ring') {
+      s.push({ type: 'grid', name: '', schema: [num('breakdown_max', 1, 12, 1), bool('breakdown_legend')] },
+        { type: 'grid', name: '', schema: [bool('group_devices'), { name: 'other_label', selector: { text: {} } }] });
+    }
+    return s;
+  } },
 ];
 const ROW_SCHEMA = [
-  { name: 'entity', selector: { entity: { domain: 'sensor' } } },
+  ent('entity'),
   { type: 'grid', name: '', schema: [{ name: 'name', selector: { text: {} } }, { name: 'group', selector: { text: {} } }] },
-  { name: 'color', selector: { text: {} } },
+  choice('color', COLOR_OPTIONS),
 ];
 
 class SolarPowerflowCardEditor extends HTMLElement {
   setConfig(config) { this._config = config; this._draw(); }
   set hass(hass) {
     this._hass = hass;
-    if (this._form) this._form.hass = hass;
+    (this._secs || []).forEach(x => { x.form.hass = hass; });
     (this._rows || []).forEach(r => { r.form.hass = hass; });
   }
+
+  _view() { return { ...DEFAULTS, grid_mode: gridMode(this._config), battery_mode: batteryMode(this._config), ...this._config }; }
 
   _emit(config) {
     const out = { ...config };
@@ -461,9 +560,12 @@ class SolarPowerflowCardEditor extends HTMLElement {
   _devices() { return Array.isArray(this._config.devices) ? this._config.devices.slice() : []; }
 
   _draw() {
-    if (!this._form) {
+    if (!this._secs) {
       const st = document.createElement('style');
-      st.textContent = '.sp-h{margin:20px 0 4px;font-weight:600;color:var(--primary-text-color)}'
+      st.textContent = '.sp-sec{border:1px solid var(--divider-color);border-radius:12px;margin:0 0 10px;padding:0 12px}'
+        + '.sp-sec>summary{cursor:pointer;font-weight:600;padding:12px 0;color:var(--primary-text-color)}'
+        + '.sp-body{padding:0 0 12px}'
+        + '.sp-h{margin:16px 0 4px;font-weight:600;color:var(--primary-text-color)}'
         + '.sp-hint{font-size:12px;color:var(--secondary-text-color);margin:0 0 10px}'
         + '.sp-row{border:1px solid var(--divider-color);border-radius:12px;padding:6px 12px 12px;margin:0 0 10px}'
         + '.sp-bar{display:flex;gap:6px;justify-content:flex-end;margin:4px 0}'
@@ -471,33 +573,47 @@ class SolarPowerflowCardEditor extends HTMLElement {
         + '.sp-b:disabled{opacity:.35;cursor:default}'
         + '.sp-add{width:100%;padding:8px;border-style:dashed;color:var(--primary-color)}';
       this.appendChild(st);
-      this._form = document.createElement('ha-form');
-      this._form.computeLabel = s => LABELS[s.name] || s.name;
-      this._form.addEventListener('value-changed', ev => {
-        ev.stopPropagation();
-        this._emit({ ...ev.detail.value, type: this._config.type, devices: this._config.devices });
+      this._secs = SECTIONS.map(sec => {
+        const det = document.createElement('details'); det.className = 'sp-sec'; det.open = !!sec.open;
+        const sm = document.createElement('summary');
+        const body = document.createElement('div'); body.className = 'sp-body';
+        const form = document.createElement('ha-form');
+        form.computeLabel = f => LABELS[f.name] || f.name;
+        form.computeHelper = f => HELPERS[f.name] || '';
+        form.addEventListener('value-changed', ev => {
+          ev.stopPropagation();
+          this._emit({ ...ev.detail.value, type: this._config.type, devices: this._config.devices });
+        });
+        body.appendChild(form);
+        det.append(sm, body);
+        this.appendChild(det);
+        if (sec.devices) { this._box = document.createElement('div'); body.appendChild(this._box); }
+        return { sec, det, sm, form };
       });
-      this.appendChild(this._form);
-      this._box = document.createElement('div');
-      this.appendChild(this._box);
     }
-    this._form.hass = this._hass;
-    this._form.schema = SCHEMA;
-    this._form.data = { ...DEFAULTS, ...this._config };
+    const view = this._view();
+    this._secs.forEach(({ sec, sm, form }) => {
+      sm.textContent = sec.title(view);
+      form.hass = this._hass;
+      form.schema = sec.schema(view);
+      form.data = view;
+    });
+    this._box.style.display = view.consumption_breakdown === 'ring' ? '' : 'none';
     this._drawDevices();
   }
 
   _drawDevices() {
     const devs = this._devices();
+    const rowData = d => ({ color: 'auto', ...d });
     if (this._rows && this._rows.length === devs.length) {
-      this._rows.forEach((r, i) => { r.form.data = devs[i]; });
+      this._rows.forEach((r, i) => { r.form.data = rowData(devs[i]); });
       return;
     }
     this._box.textContent = '';
     this._rows = [];
     const h = document.createElement('div'); h.className = 'sp-h'; h.textContent = 'Appareils à détailler';
     const hint = document.createElement('div'); hint.className = 'sp-hint';
-    hint.textContent = 'Ajoutez les capteurs de puissance (W) des appareils. L\'écart avec la consommation de la maison apparaît dans la part non détaillée. Évitez les doubles comptages (une multiprise et les appareils branchés dessus).';
+    hint.textContent = "Ajoutez les capteurs de puissance (W) des appareils. L'écart avec la consommation de la maison apparaît dans la part non détaillée. Évitez les doubles comptages (une multiprise et les appareils branchés dessus).";
     this._box.append(h, hint);
     const btn = (label, title, fn, disabled) => {
       const b = document.createElement('button');
@@ -516,12 +632,13 @@ class SolarPowerflowCardEditor extends HTMLElement {
       const form = document.createElement('ha-form');
       form.hass = this._hass;
       form.schema = ROW_SCHEMA;
-      form.computeLabel = s => LABELS[s.name] || s.name;
-      form.data = dev;
+      form.computeLabel = f => LABELS[f.name] || f.name;
+      form.data = rowData(dev);
       form.addEventListener('value-changed', ev => {
         ev.stopPropagation();
         const cur = this._devices(), r = {};
         Object.entries(ev.detail.value || {}).forEach(([k, v]) => { if (v !== '' && v != null) r[k] = v; });
+        if (r.color === 'auto') delete r.color;
         if (!('entity' in r)) r.entity = '';
         cur[i] = r;
         this._emit({ ...this._config, devices: cur });
@@ -561,4 +678,4 @@ window.customCards.push({
   description: "Flux d'énergie solaire animé : production, batterie, réseau et maison.",
   preview: true,
 });
-console.info('%c SOLAR-POWERFLOW-CARD %c v1.3.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');
+console.info('%c SOLAR-POWERFLOW-CARD %c v1.4.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');

@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 1.4.0
+- Couleurs des appareils choisies par leur nom (bleu, rouge, orange, jaune, vert, violet, rose, turquoise, marron, blanc) ; l'hexadécimal reste accepté.
+- Soutirage réseau signalé seulement au-dessus de 50 W (`grid_import_threshold`, réglable) : flux, badge, autonomie. L'injection reste détectée dès 10 W.
+- Un seul capteur signé pour le réseau (`grid_power_entity`, positif = soutirage) et pour la batterie (`battery_power_entity`, positif = charge), avec inversion du sens.
+- Nouvelle disposition `layout: mini` : une seule ligne, qui respecte l'affichage de la batterie et du réseau.
+- Éditeur réorganisé en sections repliables, avec des champs affichés seulement quand ils servent.
+- README : avertissement sur la dépendance aux données de l'onduleur et de l'installation ; sections « Mises à jour » et « Dépannage » retirées.
+
 ## 1.3.0
 Nouvelle option, désactivée par défaut : le **détail de la consommation de la maison**.
 - `consumption_breakdown: ring` : l'anneau du cercle Maison se découpe en segments colorés, un par appareil, avec une légende sous la carte.

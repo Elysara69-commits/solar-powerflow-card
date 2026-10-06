@@ -25,6 +25,9 @@ figure.opt{margin:0}figure.opt img{max-width:100%;border-radius:14px;display:blo
 <h1>Solar Powerflow Card</h1>
 <p>Une carte Lovelace qui montre en direct où va l'énergie de votre installation solaire : production, batterie, réseau et maison. Les points qui circulent indiquent le sens du flux, et leur vitesse suit la puissance.</p>
 
+<h2>Avertissement</h2>
+<p>Les valeurs, les flux animés et les états affichés dépendent <b>uniquement des informations remontées par votre onduleur, votre batterie, votre compteur et votre installation photovoltaïque</b>, et de leur fréquence de rafraîchissement. Selon les marques, un capteur peut être absent, arrondi, décalé, ou utiliser un autre sens de signe. La carte ne remplace ni un compteur certifié ni un outil de facturation ; la répartition des flux directs et le détail de la consommation sont des estimations.</p>
+
 <h2>Ce que la carte affiche</h2>
 <ul>
 <li><span class="dotl" style="background:var(--pv)"></span><b>Production</b> : la puissance est écrite en jaune dans le cercle, et « EN PRODUCTION » ou « AU REPOS » sous le titre.</li>
@@ -125,6 +128,25 @@ devices:
 <li>Seuls les plus gros consommateurs du moment sont détaillés (<code>breakdown_max</code>) ; leur couleur reste fixe.</li>
 <li>Le cercle est toujours plein : il montre la répartition, le chiffre au centre donne le niveau.</li>
 </ul>
+
+<h2>Disposition mini, capteurs signés et seuil</h2>
+<div class="opts">
+<figure class="opt"><img src="../images/mini.png" alt="Mini"><figcaption><b>layout: mini</b> : une ligne (production, maison, batterie, réseau). Respecte <code>show_battery</code> et <code>show_grid</code>.</figcaption></figure>
+<figure class="opt"><img src="../images/mini-nobat.png" alt="Mini sans batterie"><figcaption>Mini avec <code>show_battery: false</code> : les tuiles restantes se répartissent la largeur.</figcaption></figure>
+</div>
+<pre>grid_mode: signed
+grid_power_entity: sensor.puissance_reseau     # positif = soutirage, négatif = injection
+grid_power_invert: false
+battery_mode: signed
+battery_power_entity: sensor.puissance_batterie # positif = charge, négatif = décharge
+soc_entity: sensor.batterie_niveau
+grid_import_threshold: 50                       # soutirage signalé au-dessus de 50 W</pre>
+<ul>
+<li>Un seul capteur par élément : mettez <code>*_power_invert: true</code> si votre système utilise le sens inverse.</li>
+<li>Sous le seuil, le cercle Réseau affiche la valeur avec « INACTIF » : pas de flux, pas de badge, autonomie non réduite. L'injection reste détectée dès 10 W.</li>
+</ul>
+<h3 style="color:var(--mut)">Couleurs des appareils</h3>
+<p>Dans la liste d'appareils, choisissez la couleur par son nom : <code>bleu</code>, <code>rouge</code>, <code>orange</code>, <code>jaune</code>, <code>vert</code>, <code>violet</code>, <code>rose</code>, <code>turquoise</code>, <code>marron</code>, <code>blanc</code>. L'hexadécimal reste accepté.</p>
 
 <h2>Réglages</h2>
 <table>
