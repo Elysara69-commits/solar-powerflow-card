@@ -1,10 +1,11 @@
-/* Solar Powerflow Card v1.4.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
+/* Solar Powerflow Card v1.5.0 - carte Lovelace de flux d'énergie solaire (sans dépendance) */
 const STUB = {
   title: 'INSTALLATION PV', layout: 'standard', max_power: 5000, battery_capacity: 0,
   show_battery: true, show_grid: true, direct_flows: false,
   alert_battery_full: false, battery_full_threshold: 99,
   alert_battery_low: false, battery_low_threshold: 15,
   alert_no_production: false, grid_import_threshold: 50, grid_power_invert: false, battery_power_invert: false,
+  background: 'sombre', background_opacity: 100, text_theme: 'auto', card_border: true,
   consumption_breakdown: 'off', breakdown_max: 5, breakdown_legend: true, group_devices: false, other_label: 'Autres',
 };
 const DEFAULTS = { ...STUB, sun_entity: 'sun.sun' };
@@ -32,6 +33,50 @@ function resolveColor(v) {
   if (/^(rgb|hsl)a?\([0-9.,%\s/]+\)$/.test(k)) return k;
   return '';
 }
+/* Fond de la carte : préréglages, transparence, couleur du texte */
+const BACKGROUNDS = { sombre: ['#0b1220', '#060a14'], noir: ['#0b0d12', '#000000'], bleu: ['#0f2347', '#070f22'], vert: ['#0c2b22', '#05150f'], violet: ['#241447', '#0f0a24'], rouge: ['#3a1218', '#1a0609'], gris: ['#272c36', '#14171d'], clair: ['#f8fafc', '#e2e8f0'] };
+const BG_ALIASES = { dark: 'sombre', black: 'noir', blue: 'bleu', green: 'vert', purple: 'violet', red: 'rouge', gray: 'gris', grey: 'gris', light: 'clair', custom: 'perso' };
+function rgbOf(v) {
+  let m = /^#([0-9a-f]{3}|[0-9a-f]{6})([0-9a-f]{2})?$/.exec(v);
+  if (m) { let h = m[1]; if (h.length === 3) h = h.split('').map(x => x + x).join(''); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)); }
+  m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/.exec(v);
+  return m ? [+m[1], +m[2], +m[3]] : null;
+}
+const luminance = ([r, g, b]) => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+
+function cardTheme(c, darkMode) {
+  const k0 = String(c.background || 'sombre').trim().toLowerCase(), key = BG_ALIASES[k0] || k0;
+  const o = Number(c.background_opacity);
+  const op = Math.max(0, Math.min(100, c.background_opacity != null && c.background_opacity !== '' && Number.isFinite(o) ? o : 100)) / 100;
+  const rgba = (h, a) => { const [r, g, b] = rgbOf(h); return `rgba(${r},${g},${b},${a})`; };
+  let bg = '', shadow = '', rgb = null;
+  if (key === 'transparent') { bg = 'transparent'; shadow = 'none'; }
+  else if (key === 'perso') {
+    const col = resolveColor(c.background_color);
+    if (col) { rgb = rgbOf(col); bg = rgb ? `rgba(${rgb.join(',')},${op})` : col; shadow = '0 0 18px rgba(0,0,0,.35)'; }
+  } else if (BACKGROUNDS[key]) {
+    const [t, b2] = BACKGROUNDS[key];
+    rgb = rgbOf(t);
+    if (key !== 'sombre' || op < 1) {
+      const glow = key === 'sombre' ? `radial-gradient(120% 70% at 50% 0%,rgba(251,191,36,${(0.13 * op).toFixed(3)}),transparent 60%),` : '';
+      bg = `${glow}linear-gradient(180deg,${rgba(t, op)} 0%,${rgba(b2, op)} 100%)`;
+      shadow = key === 'sombre' ? `0 0 26px rgba(251,191,36,${(0.10 * op).toFixed(3)})` : (key === 'clair' ? '0 1px 10px rgba(15,23,42,.18)' : '0 0 18px rgba(0,0,0,.35)');
+    }
+  }
+  let theme = c.text_theme;
+  if (theme !== 'light' && theme !== 'dark') {
+    if (key === 'transparent') theme = darkMode === false ? 'dark' : 'light';
+    else if (key === 'clair') theme = 'dark';
+    else if (key === 'perso' && rgb) theme = luminance(rgb) > 0.6 ? 'dark' : 'light';
+    else theme = 'light';
+  }
+  let st = '';
+  if (bg) st += `background:${bg};`;
+  if (shadow) st += `box-shadow:${shadow};`;
+  if (theme === 'dark') st += '--tx:#0f172a;--tx2:#475569;--ttl:#b45309;--tsh:none;--disc:rgba(255,255,255,.93);--disc2:rgba(255,255,255,.97);--vtx:#0f172a;';
+  return st;
+}
+
 const fmt = w => w >= 1000 ? (w / 1000).toFixed(2).replace('.', ',') + ' kW' : Math.round(w) + ' W';
 
 /* ---------- Géométrie des trois dispositions ---------- */
@@ -164,7 +209,7 @@ function buildModel(d, c, sunUp, devs) {
   const bd = c.consumption_breakdown === 'ring' ? breakdown(conso, devs || [], c) : null;
   const nodes = {
     pv: { ...P.pv, color: pvCol, icon: 'mdi:solar-power-variant', val: fmt(pv), frac: clamp(pv / max), ent: E('pv_entity'), cls: pvCls, name: 'PRODUCTION', sub: pvSub, subCol: pvCol, spin: pv > 10, mini: { t: pvMini, c: pvCol } },
-    house: { ...P.house, color: cHouse, icon: 'mdi:home-lightning-bolt', val: fmt(conso), frac: clamp(conso / max), ent: E('load_entity'), cls: '', name: 'MAISON', sub: '', subCol: '', segs: bd ? bd.segs : null, mini: { t: autonomie !== null ? 'AUTONOMIE ' + autonomie + '%' : '', c: '#94a3b8' } },
+    house: { ...P.house, color: cHouse, icon: 'mdi:home-lightning-bolt', val: fmt(conso), frac: clamp(conso / max), ent: E('load_entity'), cls: '', name: 'MAISON', sub: '', subCol: '', segs: bd ? bd.segs : null, mini: { t: autonomie !== null ? 'AUTONOMIE ' + autonomie + '%' : '', c: 'var(--tx2)' } },
     bat: showBat ? { ...P.bat, color: batCol, icon: 'mdi:home-battery', val: Math.round(soc) + '%', frac: clamp(soc / 100), ent: E('soc_entity'), cls: batCls, glow: batGlow,
       name: 'BATTERIE' + (cap > 0 ? ' · ' + (soc * cap / 100).toFixed(1).replace('.', ',') + ' kWh' : ''), sub: batSub, subCol: batSubCol, mini: { t: batMini, c: batSubCol } } : null,
     grid: showGrid ? { ...P.grid, color: cGrid, icon: 'mdi:transmission-tower', val: fmt(gridP), frac: clamp(gridP / max), ent: E(gridSigned ? 'grid_power_entity' : (exp > 10 ? 'grid_export_entity' : 'grid_import_entity')), cls: '', name: 'RÉSEAU', sub: gridSub, subCol: cGrid, mini: { t: gridSub, c: cGrid } } : null,
@@ -202,7 +247,7 @@ function buildModel(d, c, sunUp, devs) {
 
 /* ---------- Vue : SVG à partir du modèle ---------- */
 const T = (x, y, t, fill, size, wt, ls, anchor) =>
-  `<text x="${x}" y="${y}" text-anchor="${anchor || 'middle'}" fill="${fill}" font-size="${size}" font-weight="${wt}" letter-spacing="${ls}">${t}</text>`;
+  `<text x="${x}" y="${y}" text-anchor="${anchor || 'middle'}" style="fill:${fill}" font-size="${size}" font-weight="${wt}" letter-spacing="${ls}">${t}</text>`;
 
 function nodeSvg(m, key) {
   const n = m.nodes[key];
@@ -215,14 +260,14 @@ function nodeSvg(m, key) {
   const spin = n.spin ? `<circle class="spin" cx="${n.x}" cy="${n.y}" r="${R + 9}" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="2 9" stroke-linecap="round" opacity=".75"/>` : '';
   return `${spin}
     <g ${n.cls ? `class="${n.cls}"` : ''} ${n.ent ? `data-entity="${n.ent}"` : ''} style="${style}">
-      <circle cx="${n.x}" cy="${n.y}" r="${R}" fill="rgba(15,23,42,.88)" stroke="rgba(148,163,184,.14)" stroke-width="${(5 * k).toFixed(1)}"/>
+      <circle cx="${n.x}" cy="${n.y}" r="${R}" style="fill:var(--disc)" stroke="rgba(148,163,184,.14)" stroke-width="${(5 * k).toFixed(1)}"/>
       ${arc}
       <foreignObject x="${(n.x - fo / 2).toFixed(1)}" y="${(n.y - 28 * k).toFixed(1)}" width="${fo}" height="${fo}">
         <div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:center;width:${fo}px;height:${fo}px;color:${n.color};">
           <ha-icon icon="${n.icon}" style="--mdc-icon-size:${ico}px;"></ha-icon>
         </div>
       </foreignObject>
-      ${T(n.x, (n.y + 17 * k).toFixed(1), n.val, '#f1f5f9', (14 * k).toFixed(1), 700, 0)}
+      ${T(n.x, (n.y + 17 * k).toFixed(1), n.val, 'var(--vtx)', (14 * k).toFixed(1), 700, 0)}
     </g>`;
 }
 
@@ -242,10 +287,10 @@ function labelSvg(m, key) {
   const R = m.g.R;
   if (m.g.layout === 'horizontal') {
     const left = key === 'pv' || key === 'bat', x = left ? n.x - R - 14 : n.x + R + 14, a = left ? 'end' : 'start';
-    return T(x, n.sub ? n.y - 3 : n.y + 4, n.name, '#94a3b8', 9, 600, 2, a) + (n.sub ? T(x, n.y + 11, n.sub, n.subCol, 8, 700, 1.2, a) : '');
+    return T(x, n.sub ? n.y - 3 : n.y + 4, n.name, 'var(--tx2)', 9, 600, 2, a) + (n.sub ? T(x, n.y + 11, n.sub, n.subCol, 8, 700, 1.2, a) : '');
   }
-  if (key === 'pv') return T(n.x, n.y - R - 40, n.name, '#94a3b8', 9, 600, 2) + T(n.x, n.y - R - 27, n.sub, n.subCol, 8, 700, 1.2);
-  return T(n.x, n.y + R + 18, n.name, '#94a3b8', 9, 600, 2) + (n.sub ? T(n.x, n.y + R + 31, n.sub, n.subCol, 8, 700, 1.2) : '');
+  if (key === 'pv') return T(n.x, n.y - R - 40, n.name, 'var(--tx2)', 9, 600, 2) + T(n.x, n.y - R - 27, n.sub, n.subCol, 8, 700, 1.2);
+  return T(n.x, n.y + R + 18, n.name, 'var(--tx2)', 9, 600, 2) + (n.sub ? T(n.x, n.y + R + 31, n.sub, n.subCol, 8, 700, 1.2) : '');
 }
 
 function flowSvg(f, max) {
@@ -267,8 +312,8 @@ function svgFromModel(m) {
       ${m.tracks.map(d => `<path d="${d}" fill="none" stroke="rgba(148,163,184,.16)" stroke-width="2" stroke-dasharray="2 6" stroke-linecap="round"/>`).join('')}
       ${m.flows.map(f => flowSvg(f, m.max)).join('')}
       ${m.anyFlow ? `<circle class="pulse" cx="${hub.x}" cy="${hub.y}" r="${g.hubR}" fill="none" stroke="#fbbf24" stroke-width="1.5"/>` : ''}
-      <circle cx="${hub.x}" cy="${hub.y}" r="${g.hubR}" fill="rgba(15,23,42,.95)" stroke="${m.active ? '#fbbf24' : SLATE}" stroke-width="2" style="filter:drop-shadow(0 0 8px ${m.active ? '#fbbf2488' : 'transparent'});"/>
-      ${T(hub.x, (hub.y + 4.5 * k).toFixed(1), m.autonomie === null ? '–' : m.autonomie + '%', '#f1f5f9', (12.5 * k).toFixed(1), 800, 0)}
+      <circle cx="${hub.x}" cy="${hub.y}" r="${g.hubR}" stroke="${m.active ? '#fbbf24' : SLATE}" stroke-width="2" style="fill:var(--disc2);filter:drop-shadow(0 0 8px ${m.active ? '#fbbf2488' : 'transparent'});"/>
+      ${T(hub.x, (hub.y + 4.5 * k).toFixed(1), m.autonomie === null ? '–' : m.autonomie + '%', 'var(--vtx)', (12.5 * k).toFixed(1), 800, 0)}
       ${['pv', 'bat', 'grid', 'house'].map(key => nodeSvg(m, key)).join('')}
       ${['pv', 'bat', 'grid', 'house'].map(key => labelSvg(m, key)).join('')}
     </svg>`;
@@ -284,7 +329,7 @@ const CSS = `
   .spin{transform-box:fill-box;transform-origin:center;animation:spin 16s linear infinite}
   .pulse{transform-box:fill-box;transform-origin:center;animation:pulse 2.4s ease-out infinite}
   .lowbat{animation:blink 1.2s ease-in-out infinite}
-  .card{padding:16px 14px 18px;border-radius:22px;overflow:hidden;color:#e2e8f0;animation:riseIn .7s ease-out;
+  .card{padding:16px 14px 18px;border-radius:22px;overflow:hidden;color:var(--tx);--tx:#f1f5f9;--tx2:#94a3b8;--ttl:#fde68a;--disc:rgba(15,23,42,.88);--disc2:rgba(15,23,42,.95);--vtx:#f1f5f9;animation:riseIn .7s ease-out;
     background:radial-gradient(120% 70% at 50% 0%,rgba(251,191,36,.13),transparent 60%),linear-gradient(180deg,#0b1220 0%,#060a14 100%);
     box-shadow:0 0 26px rgba(251,191,36,.10),inset 0 0 50px rgba(2,6,23,.7)}
   .card.compact{padding:10px 12px 12px;border-radius:18px}
@@ -294,10 +339,10 @@ const CSS = `
   .minirow{display:flex;align-items:stretch}
   .tile{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px 4px}
   .tile+.tile{border-left:1px solid rgba(148,163,184,.12)}
-  .tv{font-size:15px;font-weight:700;color:#f1f5f9;white-space:nowrap}
+  .tv{font-size:15px;font-weight:700;color:var(--tx);white-space:nowrap}
   .ts{font-size:7.5px;font-weight:700;letter-spacing:.8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;min-height:9px}
   .head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px}
-  .t1{font-size:15px;font-weight:800;letter-spacing:2.5px;color:#fde68a;text-shadow:0 0 10px #fbbf2488}
+  .t1{font-size:15px;font-weight:800;letter-spacing:2.5px;color:var(--ttl);text-shadow:var(--tsh,0 0 10px #fbbf2488)}
   .t2{font-size:9px;letter-spacing:2px;color:#64748b;margin-top:2px}
   .badge{font-size:7.5px;font-weight:700;letter-spacing:1px;padding:5px 9px;border-radius:999px;white-space:nowrap;display:flex;align-items:center;gap:6px}
   .dot{width:6px;height:6px;border-radius:50%;animation:blink 1.6s ease-in-out infinite}
@@ -305,8 +350,8 @@ const CSS = `
   .legend:empty{display:none}
   .lg{display:flex;align-items:center;gap:6px;font-size:10px;min-width:0}
   .ld{width:8px;height:8px;border-radius:50%;flex:none}
-  .ln{color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
-  .lv{color:#f1f5f9;font-weight:700;flex:none}
+  .ln{color:var(--tx2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+  .lv{color:var(--tx);font-weight:700;flex:none}
   .lo{grid-column:1/-1;font-size:9px;color:#f97316}
 `;
 
@@ -394,18 +439,19 @@ class SolarPowerflowCard extends HTMLElement {
       return { i, name: x.name || (st && st.attributes && st.attributes.friendly_name) || x.entity, color: x.color || '', group: x.group || '', w: off || v === null ? 0 : Math.max(0, v), off };
     });
     if (demo && this._config.consumption_breakdown === 'ring' && !devs.length) devs = DEMO_DEVS;
-    const sig = JSON.stringify([d, demo, sunUp, devs, this._config]);
+    const dm = this._hass.themes ? this._hass.themes.darkMode : undefined;
+    const sig = JSON.stringify([d, demo, sunUp, devs, dm, this._config]);
     if (sig === this._sig) return;
     this._sig = sig;
-    this._render(d, demo, sunUp, devs);
+    this._render(d, demo, sunUp, devs, dm);
   }
 
-  _render(d, demo, sunUp, devs) {
+  _render(d, demo, sunUp, devs, dm) {
     const c = this._config;
     const m = buildModel(d, c, sunUp, devs);
     const { txt, col } = m.status;
     const html = `
-      <div class="card ${m.g.layout}" style="border:1px solid ${m.active ? 'rgba(251,191,36,.45)' : 'rgba(100,116,139,.35)'}">
+      <div class="card ${m.g.layout}" style="border:1px solid ${c.card_border === false ? 'transparent' : (m.active ? 'rgba(251,191,36,.45)' : 'rgba(100,116,139,.35)')};${cardTheme(c, dm)}">
         <div class="head">
           <div><div class="t1">${esc(c.title || '')}</div><div class="t2">FLUX D'ÉNERGIE · ${demo ? 'DÉMO' : 'TEMPS RÉEL'}</div></div>
           <div class="badge" style="color:${col};border:1px solid ${col}66;background:${col}14"><span class="dot" style="background:${col};box-shadow:0 0 8px ${col}"></span>${txt}</div>
@@ -448,6 +494,11 @@ const LABELS = {
   grid_power_invert: 'Inverser le sens (positif = injection)',
   grid_import_threshold: 'Soutirage signalé au-dessus de (W)',
   direct_flows: 'Flux directs (production → batterie / réseau)',
+  background: 'Fond de la carte',
+  background_color: 'Couleur personnalisée (ex. #1e293b)',
+  background_opacity: 'Opacité du fond (%)',
+  text_theme: 'Couleur du texte',
+  card_border: 'Afficher le contour de la carte',
   alert_battery_full: 'Alerte : batterie pleine',
   battery_full_threshold: 'Batterie pleine à partir de (%)',
   alert_battery_low: 'Alerte : batterie faible',
@@ -513,6 +564,23 @@ const SECTIONS = [
     return s;
   } },
   { id: 'display', open: false, title: () => 'Affichage', schema: () => [bool('direct_flows')] },
+  { id: 'bg', open: false, title: c => {
+    const k = String(c.background || 'sombre').toLowerCase();
+    return 'Fond de la carte' + (k === 'transparent' ? ' · transparent' : (k !== 'sombre' ? ' · ' + (BG_ALIASES[k] || k) : ''));
+  }, schema: c => {
+    const s = [choice('background', [
+      { value: 'sombre', label: 'Sombre (par défaut)' }, { value: 'noir', label: '⬛ Noir' }, { value: 'bleu', label: '🟦 Bleu nuit' },
+      { value: 'vert', label: '🟩 Vert foncé' }, { value: 'violet', label: '🟪 Violet' }, { value: 'rouge', label: '🟥 Rouge sombre' },
+      { value: 'gris', label: 'Gris' }, { value: 'clair', label: '⬜ Clair' }, { value: 'transparent', label: 'Transparent' },
+      { value: 'perso', label: 'Couleur personnalisée' },
+    ])];
+    if (c.background === 'perso' || c.background === 'custom') s.push({ name: 'background_color', selector: { text: {} } });
+    if (c.background !== 'transparent') s.push(num('background_opacity', 0, 100, 5));
+    s.push(choice('text_theme', [
+      { value: 'auto', label: 'Automatique' }, { value: 'light', label: 'Texte clair (fond sombre)' }, { value: 'dark', label: 'Texte foncé (fond clair)' },
+    ]), bool('card_border'));
+    return s;
+  } },
   { id: 'alerts', open: false, title: c => {
     const n = [c.alert_battery_full, c.alert_battery_low, c.alert_no_production].filter(Boolean).length;
     return 'Alertes' + (n ? ' · ' + n + (n > 1 ? ' actives' : ' active') : '');
@@ -678,4 +746,4 @@ window.customCards.push({
   description: "Flux d'énergie solaire animé : production, batterie, réseau et maison.",
   preview: true,
 });
-console.info('%c SOLAR-POWERFLOW-CARD %c v1.4.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');
+console.info('%c SOLAR-POWERFLOW-CARD %c v1.5.0 ', 'background:#fbbf24;color:#000;font-weight:700', 'background:#0b1220;color:#fbbf24');

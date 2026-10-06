@@ -1,6 +1,6 @@
 # ☀️ Solar Powerflow Card
 
-![version](https://img.shields.io/badge/version-1.4.0-fbbf24)
+![version](https://img.shields.io/badge/version-1.5.0-fbbf24)
 
 Carte Lovelace de **flux d'énergie solaire animé** : production, batterie, réseau et maison.
 Aucune dépendance, éditeur visuel inclus : les entités et toutes les options se règlent directement dans l'interface.
@@ -97,6 +97,39 @@ Si `grid_power_entity` (ou `battery_power_entity`) est renseigné sans `grid_mod
 
 Le soutirage réseau n'est signalé (flux animé, badge « SOUTIRAGE RÉSEAU », couleur rouge, autonomie réduite) qu'**au-dessus de 50 W** par défaut. En dessous, le cercle Réseau affiche la valeur mesurée avec « INACTIF ». Le seuil est réglable (minimum 10 W) et ne concerne que le soutirage : l'injection reste détectée dès 10 W.
 
+### 🎨 Fond de la carte (`background`)
+
+Le fond s'adapte à votre tableau de bord : plusieurs couleurs prédéfinies, une couleur personnalisée, un fond semi-transparent ou entièrement transparent.
+
+<p><img src="images/backgrounds.png" width="700" alt="Fonds prédéfinis"></p>
+
+| Valeur de `background` | Rendu |
+|---|---|
+| `sombre` (défaut) | Bleu nuit avec une lueur dorée |
+| `noir`, `bleu`, `vert`, `violet`, `rouge`, `gris` | Fonds sombres teintés |
+| `clair` | Fond clair, texte foncé |
+| `transparent` | Aucun fond : on voit celui du tableau de bord |
+| `perso` | Votre couleur, avec `background_color: "#3b1d2a"` (hexadécimal ou `rgb(…)`) |
+
+Les noms anglais (`dark`, `blue`, `light`, `custom`…) sont acceptés. Une valeur inconnue revient au fond par défaut.
+
+<p><img src="images/transparent.png" width="700" alt="Fond transparent, semi-transparent et personnalisé"></p>
+
+| Option | Description | Défaut |
+|---|---|---|
+| `background_opacity` | Opacité du fond, de `0` (invisible) à `100` (opaque). Sans effet sur `transparent`. | `100` |
+| `text_theme` | `auto`, `light` (texte clair) ou `dark` (texte foncé) | `auto` |
+| `card_border` | Afficher le contour de la carte | `true` |
+
+- **Texte automatique** : le texte devient foncé avec le fond `clair`, avec un fond `perso` clair, et avec un fond `transparent` quand le thème de Home Assistant est clair. Forcez `light` ou `dark` si le résultat ne convient pas (par exemple sur une image de fond).
+- Les couleurs d'accent (jaune de la production, vert de la batterie, etc.) ne changent pas : sur un fond très clair, le jaune est moins contrasté.
+- Pour une carte intégrée à un tableau de bord à image de fond, essayez `transparent` avec `card_border: false`.
+
+```yaml
+background: transparent
+card_border: false
+```
+
 ### 🚨 Alertes visuelles
 
 | Option | Effet | Réglage |
@@ -181,7 +214,7 @@ Le fichier `solar-powerflow-card.js` et `hacs.json` doivent être à la racine d
 
 ## ⚙️ Configuration
 
-Via l'éditeur visuel, organisé en sections repliables (Général, Production et consommation, Batterie, Réseau, Affichage, Alertes, Détail de la consommation) dont les champs n'apparaissent que s'ils sont utiles, ou en YAML :
+Via l'éditeur visuel, organisé en sections repliables (Général, Production et consommation, Batterie, Réseau, Affichage, Fond de la carte, Alertes, Détail de la consommation) dont les champs n'apparaissent que s'ils sont utiles, ou en YAML :
 
 ```yaml
 type: custom:solar-powerflow-card
@@ -207,6 +240,10 @@ battery_low_threshold: 15
 alert_no_production: true
 sun_entity: sun.sun
 grid_import_threshold: 50
+background: bleu
+background_opacity: 100
+text_theme: auto
+card_border: true
 consumption_breakdown: ring
 devices:
   - entity: sensor.prise_frigo_puissance
@@ -236,6 +273,10 @@ devices:
 | `alert_battery_full` / `battery_full_threshold` | Alerte batterie pleine et son seuil (%) | `false` / `99` |
 | `alert_battery_low` / `battery_low_threshold` | Alerte batterie faible et son seuil (%) | `false` / `15` |
 | `alert_no_production` / `sun_entity` | Alerte « aucune production en plein jour » et entité soleil | `false` / `sun.sun` |
+| `background` / `background_color` | Fond de la carte (couleur prédéfinie, `transparent` ou `perso`) | `sombre` / – |
+| `background_opacity` | Opacité du fond (0 à 100) | `100` |
+| `text_theme` | Couleur du texte : `auto`, `light` ou `dark` | `auto` |
+| `card_border` | Afficher le contour de la carte | `true` |
 | `consumption_breakdown` / `devices` | Détail de la consommation par appareil (anneau coloré), voir plus haut | `off` / – |
 
 Page explicative avec exemples : [`docs/solar-powerflow-card.html`](docs/solar-powerflow-card.html) (à télécharger puis ouvrir dans un navigateur).

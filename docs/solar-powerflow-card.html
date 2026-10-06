@@ -148,6 +148,19 @@ grid_import_threshold: 50                       # soutirage signalé au-dessus d
 <h3 style="color:var(--mut)">Couleurs des appareils</h3>
 <p>Dans la liste d'appareils, choisissez la couleur par son nom : <code>bleu</code>, <code>rouge</code>, <code>orange</code>, <code>jaune</code>, <code>vert</code>, <code>violet</code>, <code>rose</code>, <code>turquoise</code>, <code>marron</code>, <code>blanc</code>. L'hexadécimal reste accepté.</p>
 
+<h2>Fond de la carte</h2>
+<p>Option <code>background</code> : <code>sombre</code> (défaut), <code>noir</code>, <code>bleu</code>, <code>vert</code>, <code>violet</code>, <code>rouge</code>, <code>gris</code>, <code>clair</code>, <code>transparent</code> ou <code>perso</code> (avec <code>background_color</code>).</p>
+<p><img src="../images/backgrounds.png" alt="Fonds prédéfinis" style="max-width:100%;border-radius:14px"></p>
+<p><img src="../images/transparent.png" alt="Fonds transparent, semi-transparent et personnalisé" style="max-width:100%;border-radius:14px"></p>
+<pre>background: transparent     # ou bleu, vert, clair, perso…
+background_opacity: 100      # 0 à 100 (sans effet sur transparent)
+text_theme: auto             # auto | light | dark
+card_border: false           # masquer le contour</pre>
+<ul>
+<li>Le texte devient foncé automatiquement avec un fond clair, et avec un fond transparent quand le thème de Home Assistant est clair. Forcez <code>light</code> ou <code>dark</code> si besoin.</li>
+<li>Les couleurs d'accent restent identiques : le jaune est moins contrasté sur un fond très clair.</li>
+</ul>
+
 <h2>Réglages</h2>
 <table>
 <tr><th>Option</th><th>Rôle</th></tr>

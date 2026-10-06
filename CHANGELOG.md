@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 1.5.0
+- **Fond de la carte** (`background`) : sombre (défaut), noir, bleu, vert, violet, rouge, gris, clair, **transparent**, ou couleur personnalisée (`background_color`).
+- `background_opacity` : fond semi-transparent (0 à 100 %).
+- `text_theme` : texte clair ou foncé, choisi automatiquement selon le fond (et le thème de Home Assistant pour le fond transparent), ou forcé.
+- `card_border` : possibilité de masquer le contour de la carte.
+- Nouvelle section « Fond de la carte » dans l'éditeur ; le champ de couleur personnalisée n'apparaît qu'avec `perso`, et l'opacité disparaît avec `transparent`.
+
 ## 1.4.0
 - Couleurs des appareils choisies par leur nom (bleu, rouge, orange, jaune, vert, violet, rose, turquoise, marron, blanc) ; l'hexadécimal reste accepté.
 - Soutirage réseau signalé seulement au-dessus de 50 W (`grid_import_threshold`, réglable) : flux, badge, autonomie. L'injection reste détectée dès 10 W.
